@@ -1,0 +1,56 @@
+{
+  "manifest_version": 3,
+  "name": "Zorte Crisp — Atendimento e Etiquetas",
+  "version": "5.0.5",
+  "description": "Unificação: etiquetas/indicadores na lista do Crisp (status, atribuição, janela 24h, contadores, canal, empresa) + validação de empresa no sistema interno e registro de atendimento pelo painel lateral.",
+  "permissions": [
+    "storage",
+    "scripting",
+    "activeTab",
+    "sidePanel"
+  ],
+  "host_permissions": [
+    "https://app.crisp.chat/*",
+    "https://chat.crisp.chat/*",
+    "http://localhost:3001/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Zorte Crisp",
+    "default_icon": {
+      "16": "logo.png",
+      "48": "logo.png",
+      "128": "logo.png"
+    }
+  },
+  "icons": {
+    "16": "logo.png",
+    "48": "logo.png",
+    "128": "logo.png"
+  },
+  "side_panel": {
+    "default_path": "drawer.html"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["drawer.html", "drawer.js"],
+      "matches": ["https://app.crisp.chat/*"]
+    }
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://app.crisp.chat/*", "https://chat.crisp.chat/*"],
+      "js": ["crisp-ui.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://app.crisp.chat/*"],
+      "js": ["tenant.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

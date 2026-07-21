@@ -1,0 +1,206 @@
+.crisp-mine-badge {
+  display: inline-block;
+  background-color: #CFE9FF;
+  color: #1a5290;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.4;
+  padding: 1px 6px;
+  border-radius: 999px;
+  margin-right: 5px;
+  vertical-align: middle;
+  white-space: nowrap;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+/* Paleta neutra e independente da cor do circulo de acao (que e
+   configuravel pelo usuario) - so o texto muda de cor conforme a urgencia,
+   o fundo e sempre o mesmo tom escuro, para nunca ser confundido com o
+   circulo amarelo/verde. */
+.crisp-countdown-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 5px;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  vertical-align: middle;
+  white-space: nowrap;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background-color: #2b2b33;
+  border: 1px solid rgba(255,255,255,0.12);
+}
+.crisp-countdown-badge.crisp-countdown-ok {
+  color: #58c9f7;
+}
+.crisp-countdown-badge.crisp-countdown-warn {
+  color: #ff9de2;
+}
+.crisp-countdown-badge.crisp-countdown-expired {
+  background-color: #e63946;
+  color: #ffffff;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 700;
+  border: none;
+}
+
+/* Icone de canal da conversa: WhatsApp em verde oficial, chat do site em
+   azul Crisp. Classes reais do Crisp confirmadas no HTML da pagina. */
+svg.c-conversation-menu-item-headline__origin-icon--whatsapp_solid {
+  color: #25D366 !important;
+  fill: #25D366 !important;
+}
+svg.c-conversation-menu-item-headline__origin-icon--message_bubble_round {
+  color: #1972F5 !important;
+  fill: #1972F5 !important;
+  stroke: #1972F5 !important;
+}
+
+/* Barra de resumo no topo da lista de conversas */
+#crisp-summary-bar {
+  display: flex;
+  gap: 6px;
+  padding: 6px 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+.crisp-summary-chip {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  background-color: #2b2b33;
+  border: 1px solid rgba(255,255,255,0.12);
+  color: #cfcfd6;
+}
+.crisp-summary-chip.crisp-summary-mine {
+  background-color: #CFE9FF;
+  border-color: #CFE9FF;
+  color: #1a5290;
+}
+.crisp-summary-chip.crisp-summary-waiting {
+  background-color: #2b2b33;
+  color: #ffc107;
+}
+
+/* Aviso de bloqueio: finalizar conversa com atendente atribuido */
+#crisp-resolve-block {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#crisp-resolve-block .crisp-resolve-block__box {
+  background: #fff;
+  color: #222;
+  border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.35);
+  padding: 20px 24px;
+  width: 320px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  text-align: center;
+}
+#crisp-resolve-block h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+#crisp-resolve-block p {
+  margin: 6px 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+#crisp-resolve-block strong {
+  color: #1a5290;
+}
+#crisp-resolve-block button {
+  margin-top: 14px;
+  padding: 8px 22px;
+  border: none;
+  border-radius: 8px;
+  background: #1c64f2;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+/* Esconde o indicador de mencao (@) que fica preso na linha mesmo depois
+   de lida/resolvida - classe real do Crisp confirmada pelo usuario. */
+.c-conversation-menu-item-headline__mention {
+  display: none !important;
+}
+
+/* Etiqueta de empresa (segmento do Crisp) - destacada com borda + icone.
+   Cor sempre branca (fixa), em vez da cor automatica por segmento do Crisp.
+   Sem forcar display/altura no wrapper de segmentos - isso quebrava o
+   layout quando uma conversa tinha varios segmentos ao mesmo tempo. */
+.c-base-tag.crisp-company-tag--list {
+  font-weight: 700 !important;
+  box-shadow: inset 0 0 0 1px currentColor;
+  padding-left: 2px;
+  color: #ffffff !important;
+}
+.c-base-tag.crisp-company-tag--list .c-base-tag__label {
+  color: #ffffff !important;
+}
+.c-base-tag.crisp-company-tag--list .c-base-tag__label::before {
+  content: "🏢 ";
+}
+
+.c-base-tag.crisp-company-tag--chat {
+  font-weight: 700 !important;
+  box-shadow: inset 0 0 0 1px currentColor;
+  padding-left: 2px;
+  color: #ffffff !important;
+}
+.c-base-tag.crisp-company-tag--chat .c-base-tag__label {
+  color: #ffffff !important;
+}
+.c-base-tag.crisp-company-tag--chat .c-base-tag__label::before {
+  content: "🏢 ";
+}
+
+/* Botao de copiar - fica FORA da etiqueta (irmao do .c-base-tag), para nao
+   sobrepor o "x" nativo de remover segmento que aparece por cima ao passar
+   o mouse na etiqueta. */
+.crisp-copy-company-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 6px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid rgba(0,0,0,0.15);
+  border-radius: 6px;
+  background: #f1f1f3;
+  color: #444;
+  cursor: pointer;
+  vertical-align: middle;
+}
+.crisp-copy-company-btn svg {
+  display: block;
+}
+.crisp-copy-company-btn:hover {
+  background: #ffffff;
+  border-color: rgba(0,0,0,0.3);
+}
+.crisp-copy-company-btn--done {
+  color: #1a9d55;
+  border-color: #1a9d55;
+  background: #eafaf0;
+}

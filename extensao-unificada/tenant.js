@@ -9,6 +9,29 @@
 // Lê o widget de perfil da conversa aberta: candidatos (cnpj/empresa/tenant/tags),
 // telefone, nome do contato e a URL atual.
 
+// Auto-cura ao recarregar a extensão: se já existe uma instância anterior neste
+// contexto, desliga ela (limpa intervalo e remove o botão/drawer antigos) para
+// que a nova assuma o controle com handlers válidos — evita o "Extension context
+// invalidated" que deixava o botão morto até um F5.
+if (window.__ztTenantShutdown) {
+  try { window.__ztTenantShutdown(); } catch (e) { /* instância antiga já morta */ }
+}
+// Remove também botão/drawer de qualquer instância órfã anterior que não tenha
+// o shutdown (ex.: versão antiga reinjetada por cima), para o novo script poder
+// recriar o botão com um handler válido.
+(function () {
+  const b = document.getElementById('zt-launcher'); if (b) b.remove();
+  const w = document.getElementById('zt-drawer-wrap'); if (w) w.remove();
+})();
+let __ztInterval = null;
+window.__ztTenantShutdown = function () {
+  try { clearInterval(__ztInterval); } catch (e) {}
+  const oldBtn = document.getElementById('zt-launcher');
+  if (oldBtn) oldBtn.remove();
+  const oldDrawer = document.getElementById('zt-drawer-wrap');
+  if (oldDrawer) oldDrawer.remove();
+};
+
 // Detecta o canal/origem da conversa aberta (chat, whatsapp, email, telefone)
 // a partir do ícone/tooltip de origem do Crisp. Usa o nome do ícone (independe
 // do idioma) e cai para o texto do tooltip como reforço.
@@ -145,7 +168,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true; // resposta assíncrona
   }
 
-  return true;
+  // Não é uma mensagem deste script (ex.: CRISP_GET_STATUS é do crisp-ui.js):
+  // não segura o canal de resposta.
+  return false;
 });
 
 // ---- Botão flutuante que abre o Side Panel ----
@@ -159,13 +184,66 @@ function mountLauncher() {
     'position:fixed;right:16px;bottom:16px;z-index:2147483645;border:0;cursor:pointer;' +
     'padding:10px 16px;border-radius:999px;color:#fff;font:600 13px/1 -apple-system,Segoe UI,Roboto,sans-serif;' +
     'background:linear-gradient(135deg,#2f7ff0,#16b89a);box-shadow:0 6px 24px rgba(47,127,240,.4);';
-  // O clique é um gesto do usuário: pede ao background para abrir o Side Panel.
+  // O clique é um gesto do usuário: tenta o painel lateral nativo do Chrome.
+  // Se o Chrome recusar (gesto perdido/serviço dormindo), abre o drawer na
+  // própria página como fallback — assim o botão SEMPRE abre algo.
   btn.addEventListener('click', () => {
-    try { chrome.runtime.sendMessage({ action: 'openSidePanel' }); } catch { /* ignora */ }
+    try {
+      chrome.runtime.sendMessage({ action: 'openSidePanel' }, (resp) => {
+        if (chrome.runtime.lastError) {
+          console.warn('[Zorte Crisp] Extensão recarregada — dê F5 na aba do Crisp.', chrome.runtime.lastError.message);
+          return;
+        }
+        if (resp && resp.ok === false) {
+          console.warn('[Zorte Crisp] Painel nativo recusado, abrindo na página. Motivo:', resp.error);
+          openInPageDrawer();
+        }
+      });
+    } catch (e) {
+      console.warn('[Zorte Crisp] Extensão recarregada — dê F5 na aba do Crisp.', e && e.message);
+    }
   });
   document.body.appendChild(btn);
 }
 
+// ---- Fallback: drawer dentro da própria página (iframe da extensão) ----
+// Usado quando o painel lateral nativo do Chrome é recusado. Fica ancorado à
+// direita e empurra o conteúdo do Crisp (best-effort) para não tampar.
+let ztDrawerWrap = null;
+function openInPageDrawer() {
+  if (ztDrawerWrap) return;
+  let url;
+  try { url = chrome.runtime.getURL('drawer.html'); }
+  catch (e) { console.warn('[Zorte Crisp] Recarregue a aba do Crisp (F5).'); return; }
+
+  ztDrawerWrap = document.createElement('div');
+  ztDrawerWrap.id = 'zt-drawer-wrap';
+  ztDrawerWrap.style.cssText =
+    'position:fixed;top:0;right:0;height:100vh;width:420px;max-width:100vw;z-index:2147483646;' +
+    'box-shadow:-8px 0 32px rgba(0,0,0,.45);background:#0b1220;';
+
+  const iframe = document.createElement('iframe');
+  iframe.src = url;
+  iframe.style.cssText = 'border:0;width:100%;height:100%;display:block;background:#0b1220;';
+  ztDrawerWrap.appendChild(iframe);
+  document.body.appendChild(ztDrawerWrap);
+
+  // Empurra o conteúdo para não tampar (alguns layouts fixos podem ignorar).
+  try { document.documentElement.style.setProperty('margin-right', '420px', 'important'); } catch (e) {}
+}
+function closeInPageDrawer() {
+  if (!ztDrawerWrap) return;
+  ztDrawerWrap.remove();
+  ztDrawerWrap = null;
+  try { document.documentElement.style.removeProperty('margin-right'); } catch (e) {}
+}
+// Mensagens do drawer embutido (fechar / ticket criado).
+window.addEventListener('message', (e) => {
+  const d = e.data;
+  if (!d || d.source !== 'zt-drawer') return;
+  if (d.type === 'close' || d.type === 'created') closeInPageDrawer();
+});
+
 // O Crisp é uma SPA e recria o DOM; reinsere o botão periodicamente se sumir.
 mountLauncher();
-setInterval(mountLauncher, 1500);
+__ztInterval = setInterval(mountLauncher, 1500);

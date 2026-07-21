@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Extensão Unificada e Penetra",
+  "version": "1.0",
+  "description": "Extensão unificada contendo os recursos principais e o sistema drawer/penetra.",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["drawer.html", "drawer.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

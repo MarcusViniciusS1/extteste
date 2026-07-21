@@ -5,6 +5,18 @@
 
 const $ = (id) => document.getElementById(id);
 
+// Este drawer roda em dois contextos: painel lateral nativo (top-level) OU
+// dentro de um iframe injetado na página do Crisp (fallback). Fechar/concluir
+// precisa agir conforme o caso.
+const EMBEDDED = window.self !== window.top;
+function dismiss(type, extra) {
+  if (EMBEDDED) {
+    try { window.parent.postMessage({ source: 'zt-drawer', type: type || 'close', ...(extra || {}) }, '*'); } catch (e) {}
+  } else {
+    window.close();
+  }
+}
+
 // ---- Ponte com o background ----
 function send(action, extra) {
   return new Promise((resolve) => {
@@ -166,8 +178,8 @@ send('getAttendants', {}).then((r) => {
 });
 
 // ---- Fechar (fecha o painel lateral) ----
-$('close').addEventListener('click', () => window.close());
-$('cancel').addEventListener('click', () => window.close());
+$('close').addEventListener('click', () => dismiss('close'));
+$('cancel').addEventListener('click', () => dismiss('close'));
 
 // ---- Submit ----
 $('form').addEventListener('submit', async (e) => {
@@ -208,5 +220,5 @@ $('form').addEventListener('submit', async (e) => {
 
   showSuccess(`Ticket criado: "${subject}". Fechando...`);
   btn.textContent = 'Criado ✓';
-  setTimeout(() => window.close(), 1200);
+  setTimeout(() => dismiss('created', { subject }), 1200);
 });
