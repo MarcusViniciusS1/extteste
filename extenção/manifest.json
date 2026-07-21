@@ -1,11 +1,12 @@
 {
   "manifest_version": 3,
   "name": "Crisp Tenant Finder",
-  "version": "2.2.0",
-  "description": "Integração automatizada entre o Crisp e o sistema interno local.",
+  "version": "2.4.3",
+  "description": "Integração automatizada entre o Crisp e o sistema interno local. Registra atendimento por um painel lateral (Side Panel) do navegador, sem tampar o Crisp.",
   "permissions": [
     "activeTab",
-    "scripting"
+    "scripting",
+    "sidePanel"
   ],
   "host_permissions": [
     "https://app.crisp.chat/*",
@@ -17,6 +18,9 @@
   "action": {
     "default_popup": "popup.html",
     "default_title": "Buscar Atendimento"
+  },
+  "side_panel": {
+    "default_path": "drawer.html"
   },
   "content_scripts": [
     {

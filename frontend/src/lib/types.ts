@@ -16,7 +16,6 @@ export interface Company {
   document?: string | null;
   email?: string | null;
   phone?: string | null;
-  address?: string | null;
   notes?: string | null;
   tenant_id?: string | null;
   tenant?: Tenant | null;

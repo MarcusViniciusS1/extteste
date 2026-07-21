@@ -12,7 +12,6 @@ Cria o schema para um sistema de atendimento/helpdesk com tickets, empresas, con
    - document (text, CNPJ/CPF)
    - email (text)
    - phone (text)
-   - address (text)
    - notes (text)
    - created_at, updated_at
 
@@ -81,7 +80,6 @@ CREATE TABLE IF NOT EXISTS companies (
   document text,
   email text,
   phone text,
-  address text,
   notes text,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()

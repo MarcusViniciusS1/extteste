@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Ticket, Building2, Users, Clock, TrendingUp, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { Ticket as TicketType, STATUS_LABELS, PRIORITY_LABELS } from '../lib/types';
+import { Ticket as TicketType, STATUS_LABELS } from '../lib/types';
 import { StatusBadge, PriorityBadge } from '../components/Badges';
 import type { Page } from '../App';
 
@@ -13,7 +13,6 @@ interface Props {
 export default function Dashboard({ onNavigate, onNewTicket }: Props) {
   const [stats, setStats] = useState({ total: 0, abertos: 0, resolvidos: 0, hoje: 0 });
   const [byStatus, setByStatus] = useState<Record<string, number>>({});
-  const [byPriority, setByPriority] = useState<Record<string, number>>({});
   const [recent, setRecent] = useState<TicketType[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -26,19 +25,16 @@ export default function Dashboard({ onNavigate, onNewTicket }: Props) {
       const list: TicketType[] = tickets ?? [];
       setRecent(list.slice(0, 6));
       const statusMap: Record<string, number> = {};
-      const prioMap: Record<string, number> = {};
       let abertos = 0, resolvidos = 0, hoje = 0;
       const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
       list.forEach((t) => {
         statusMap[t.status] = (statusMap[t.status] ?? 0) + 1;
-        prioMap[t.priority] = (prioMap[t.priority] ?? 0) + 1;
         if (['novo', 'em_andamento', 'aguardando'].includes(t.status)) abertos++;
         if (t.status === 'resolvido') resolvidos++;
         if (t.created_at && new Date(t.created_at) >= todayStart) hoje++;
       });
       setStats({ total: count ?? 0, abertos, resolvidos, hoje });
       setByStatus(statusMap);
-      setByPriority(prioMap);
       setLoading(false);
     })();
   }, []);
@@ -86,50 +82,25 @@ export default function Dashboard({ onNavigate, onNewTicket }: Props) {
         })}
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Status distribution */}
-        <div className="card p-5">
-          <h3 className="mb-4 text-sm font-semibold">Tickets por Status</h3>
-          <div className="space-y-3">
-            {Object.entries(STATUS_LABELS).map(([key, label]) => {
-              const count = byStatus[key] ?? 0;
-              const pct = stats.total ? (count / stats.total) * 100 : 0;
-              return (
-                <div key={key}>
-                  <div className="mb-1 flex items-center justify-between text-xs">
-                    <span className="text-[#c0cce6]">{label}</span>
-                    <span className="text-[#8a99b8]">{count}</span>
-                  </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-white/5">
-                    <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, background: statusColors[key] }} />
-                  </div>
+      {/* Status distribution */}
+      <div className="card p-5">
+        <h3 className="mb-4 text-sm font-semibold">Tickets por Status</h3>
+        <div className="space-y-3">
+          {Object.entries(STATUS_LABELS).map(([key, label]) => {
+            const count = byStatus[key] ?? 0;
+            const pct = stats.total ? (count / stats.total) * 100 : 0;
+            return (
+              <div key={key}>
+                <div className="mb-1 flex items-center justify-between text-xs">
+                  <span className="text-[#c0cce6]">{label}</span>
+                  <span className="text-[#8a99b8]">{count}</span>
                 </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Priority distribution */}
-        <div className="card p-5">
-          <h3 className="mb-4 text-sm font-semibold">Tickets por Prioridade</h3>
-          <div className="space-y-3">
-            {Object.entries(PRIORITY_LABELS).map(([key, label]) => {
-              const count = byPriority[key] ?? 0;
-              const pct = stats.total ? (count / stats.total) * 100 : 0;
-              const colors: Record<string, string> = { baixa: '#5a6a8a', media: '#2f7ff0', alta: '#f59e0b', urgente: '#ef4444' };
-              return (
-                <div key={key}>
-                  <div className="mb-1 flex items-center justify-between text-xs">
-                    <span className="text-[#c0cce6]">{label}</span>
-                    <span className="text-[#8a99b8]">{count}</span>
-                  </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-white/5">
-                    <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, background: colors[key] }} />
-                  </div>
+                <div className="h-2 overflow-hidden rounded-full bg-white/5">
+                  <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, background: statusColors[key] }} />
                 </div>
-              );
-            })}
-          </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 

@@ -6,7 +6,7 @@ import Modal from '../components/Modal';
 
 const API_TYPES = [
   { value: 'claude', label: 'Claude (Anthropic)' },
-  { value: 'linea', label: 'LINEA' },
+  { value: 'linea', label: 'Lonngren' },
   { value: 'openai', label: 'OpenAI' },
   { value: 'zendesk', label: 'Zendesk' },
   { value: 'freshdesk', label: 'Freshdesk' },
@@ -96,7 +96,7 @@ export default function ApiConnections() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Conexões de API</h1>
-          <p className="text-sm text-[#8a99b8]">Integrações com Claude, LINEA e outros sistemas</p>
+          <p className="text-sm text-[#8a99b8]">Integrações com Claude, Lonngren e outros sistemas</p>
         </div>
         <button onClick={openNew} className="btn-primary"><Plus className="h-4 w-4" /> Nova Conexão</button>
       </div>

@@ -5,6 +5,15 @@
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
+-- Tenants (inquilinos)
+CREATE TABLE IF NOT EXISTS tenants (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  slug text UNIQUE,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
 -- Empresas
 CREATE TABLE IF NOT EXISTS companies (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -12,13 +21,14 @@ CREATE TABLE IF NOT EXISTS companies (
   document text,
   email text,
   phone text,
-  address text,
   notes text,
+  tenant_id uuid REFERENCES tenants(id) ON DELETE SET NULL,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_companies_name ON companies (name);
 CREATE INDEX IF NOT EXISTS idx_companies_document ON companies (document);
+CREATE INDEX IF NOT EXISTS idx_companies_tenant ON companies (tenant_id);
 
 -- Contatos
 CREATE TABLE IF NOT EXISTS contacts (
@@ -118,6 +128,9 @@ BEGIN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_tenants_updated ON tenants;
+CREATE TRIGGER trg_tenants_updated BEFORE UPDATE ON tenants FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 DROP TRIGGER IF EXISTS trg_companies_updated ON companies;
 CREATE TRIGGER trg_companies_updated BEFORE UPDATE ON companies FOR EACH ROW EXECUTE FUNCTION update_updated_at();

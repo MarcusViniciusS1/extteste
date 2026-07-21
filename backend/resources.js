@@ -12,7 +12,6 @@ export const RESOURCES = {
       document: 'documento',
       email: 'email',
       phone: 'telefone',
-      address: 'endereco',
       notes: 'observacoes',
       tenant_id: 'inquilino_id',
       created_at: 'criado_em',

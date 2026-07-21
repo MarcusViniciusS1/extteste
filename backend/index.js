@@ -165,11 +165,10 @@ async function searchCompanies(q) {
   const like = `%${query}%`;
   const digits = query.replace(/\D/g, '');
   const digitsLike = digits ? `%${digits}%` : null;
-  const { rows } = await pool.query(
-    `SELECT e.id,
-            e.nome       AS name,
-            e.documento  AS document,
-            i.nome       AS tenant
+  const params = [like, digitsLike];
+
+  const sqlComTenant =
+    `SELECT e.id, e.nome AS name, e.documento AS document, i.nome AS tenant
        FROM empresas e
        LEFT JOIN inquilinos i ON i.id = e.inquilino_id
       WHERE e.nome ILIKE $1
@@ -177,10 +176,25 @@ async function searchCompanies(q) {
          OR i.nome ILIKE $1
          OR ($2::text IS NOT NULL AND regexp_replace(coalesce(e.documento,''), '[^0-9]', '', 'g') LIKE $2)
       ORDER BY e.nome
-      LIMIT 25`,
-    [like, digitsLike]
-  );
-  return rows;
+      LIMIT 25`;
+  // Fallback caso a tabela inquilinos / coluna inquilino_id não exista.
+  const sqlSemTenant =
+    `SELECT e.id, e.nome AS name, e.documento AS document
+       FROM empresas e
+      WHERE e.nome ILIKE $1
+         OR e.documento ILIKE $1
+         OR ($2::text IS NOT NULL AND regexp_replace(coalesce(e.documento,''), '[^0-9]', '', 'g') LIKE $2)
+      ORDER BY e.nome
+      LIMIT 25`;
+
+  try {
+    const { rows } = await pool.query(sqlComTenant, params);
+    return rows;
+  } catch (e) {
+    console.warn('⚠️ [searchCompanies] busca por tenant indisponível, usando fallback sem tenant:', e.message);
+    const { rows } = await pool.query(sqlSemTenant, params);
+    return rows;
+  }
 }
 
 function pickBest(rows, q) {
@@ -316,25 +330,54 @@ app.post('/api/empresas/validar', async (req, res) => {
     // Tira os repetidos
     const uniq = [...new Set(candidates.map(c => String(c).trim()).filter(Boolean))];
 
+    // Query com tenant (inquilinos). Preferida.
+    const sqlComTenant = `
+      SELECT e.id, e.nome AS name, e.documento AS document, i.nome AS tenant
+      FROM empresas e
+      LEFT JOIN inquilinos i ON i.id = e.inquilino_id
+      WHERE e.nome ILIKE $1
+         OR i.nome ILIKE $1
+         OR e.documento ILIKE $1
+         OR ($2::text IS NOT NULL AND regexp_replace(coalesce(e.documento,''), '[^0-9]', '', 'g') LIKE $2)
+      LIMIT 1
+    `;
+    // Fallback sem tenant, caso a tabela inquilinos / coluna inquilino_id não
+    // exista neste banco (migração de tenant não aplicada). Evita quebrar a
+    // identificação de empresas.
+    const sqlSemTenant = `
+      SELECT e.id, e.nome AS name, e.documento AS document
+      FROM empresas e
+      WHERE e.nome ILIKE $1
+         OR e.documento ILIKE $1
+         OR ($2::text IS NOT NULL AND regexp_replace(coalesce(e.documento,''), '[^0-9]', '', 'g') LIKE $2)
+      LIMIT 1
+    `;
+
+    let usarTenant = true;
+
     // Testa candidato por candidato
     for (const q of uniq) {
       const like = `%${q}%`;
       // Extrai os números do candidato (útil se for um CNPJ não formatado testando contra o formatado no DB)
       const digits = q.replace(/\D/g, '');
       const digitsLike = digits ? `%${digits}%` : null;
+      const paramsArr = [like, digitsLike];
 
-      const result = await pool.query(`
-        SELECT id, nome AS name, documento AS document, endereco AS address
-        FROM empresas
-        WHERE nome ILIKE $1
-           OR endereco ILIKE $1
-           OR documento ILIKE $1
-           OR ($2::text IS NOT NULL AND regexp_replace(coalesce(documento,''), '[^0-9]', '', 'g') LIKE $2)
-        LIMIT 1
-      `, [like, digitsLike]);
+      let result = null;
+      if (usarTenant) {
+        try {
+          result = await pool.query(sqlComTenant, paramsArr);
+        } catch (e) {
+          console.warn('⚠️ [validar] busca por tenant indisponível, usando fallback sem tenant:', e.message);
+          usarTenant = false;
+        }
+      }
+      if (!usarTenant) {
+        result = await pool.query(sqlSemTenant, paramsArr);
+      }
 
-      // Se encontrou batendo o nome OR endereco OR CNPJ, já retorna sucesso e para o loop!
-      if (result.rows.length > 0) {
+      // Se encontrou batendo o nome OR tenant OR CNPJ, já retorna sucesso e para o loop!
+      if (result && result.rows.length > 0) {
         return res.json({ found: true, data: result.rows[0] });
       }
     }

@@ -31,7 +31,6 @@ CREATE TABLE IF NOT EXISTS empresas (
   documento text,
   email text,
   telefone text,
-  endereco text,
   observacoes text,
   criado_em timestamptz DEFAULT now(),
   atualizado_em timestamptz DEFAULT now()

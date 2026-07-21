@@ -91,7 +91,7 @@ export default function Tickets({ onOpen, onNewTicket }: Props) {
             <select className="input w-auto" value={sistemaFilter} onChange={(e) => setSistemaFilter(e.target.value)}>
               <option value="all">Todos os sistemas</option>
               <option value="Z">Zorte</option>
-              <option value="L">Linea</option>
+              <option value="L">Lonngren</option>
             </select>
           </div>
         </div>

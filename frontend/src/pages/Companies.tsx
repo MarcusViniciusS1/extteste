@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Search, Plus, Trash2, Pencil, Building2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { Company } from '../lib/types';
+import { Company, Tenant } from '../lib/types';
 import Modal from '../components/Modal';
 
 export default function Companies() {
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [tenants, setTenants] = useState<Tenant[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [showForm, setShowForm] = useState(false);
@@ -15,13 +16,17 @@ export default function Companies() {
   const [document, setDocument] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  const [address, setAddress] = useState('');
+  const [tenantName, setTenantName] = useState('');
   const [notes, setNotes] = useState('');
 
   async function load() {
     setLoading(true);
-    const { data } = await supabase.from('companies').select('*').order('name');
-    setCompanies(data ?? []);
+    const [{ data: companiesData }, { data: tenantsData }] = await Promise.all([
+      supabase.from('companies').select('*, tenant(*)').order('name'),
+      supabase.from('tenants').select('*').order('name'),
+    ]);
+    setCompanies(companiesData ?? []);
+    setTenants(tenantsData ?? []);
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
@@ -34,28 +39,40 @@ export default function Companies() {
 
   function openNew() {
     setEditing(null);
-    setName(''); setDocument(''); setEmail(''); setPhone(''); setAddress(''); setNotes('');
+    setName(''); setDocument(''); setEmail(''); setPhone(''); setTenantName(''); setNotes('');
     setShowForm(true);
   }
   function openEdit(c: Company) {
     setEditing(c);
-    setName(c.name); setDocument(c.document ?? ''); setEmail(c.email ?? ''); setPhone(c.phone ?? ''); setAddress(c.address ?? ''); setNotes(c.notes ?? '');
+    setName(c.name); setDocument(c.document ?? ''); setEmail(c.email ?? ''); setPhone(c.phone ?? ''); setTenantName(c.tenant?.name ?? ''); setNotes(c.notes ?? '');
     setShowForm(true);
+  }
+
+  // Resolve o nome digitado para um tenant_id: reaproveita um tenant existente
+  // com o mesmo nome (case-insensitive) ou cria um novo na hora.
+  async function resolveTenantId(rawName: string): Promise<string | null> {
+    const nm = rawName.trim();
+    if (!nm) return null;
+    const existing = tenants.find((t) => t.name.toLowerCase() === nm.toLowerCase());
+    if (existing) return existing.id;
+    const { data } = await supabase.from('tenants').insert({ name: nm }).select('id').single();
+    return data?.id ?? null;
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
+    const tenantId = await resolveTenantId(tenantName);
     if (editing) {
       await supabase.from('companies').update({
         name: name.trim(), document: document.trim() || null, email: email.trim() || null,
-        phone: phone.trim() || null, address: address.trim() || null, notes: notes.trim() || null,
+        phone: phone.trim() || null, tenant_id: tenantId, notes: notes.trim() || null,
       }).eq('id', editing.id);
       await supabase.from('system_logs').insert({ action: 'update', entity: 'company', entity_id: editing.id, details: { name: name.trim() } });
     } else {
       const { data } = await supabase.from('companies').insert({
         name: name.trim(), document: document.trim() || null, email: email.trim() || null,
-        phone: phone.trim() || null, address: address.trim() || null, notes: notes.trim() || null,
+        phone: phone.trim() || null, tenant_id: tenantId, notes: notes.trim() || null,
       }).select('id').single();
       if (data) await supabase.from('system_logs').insert({ action: 'create', entity: 'company', entity_id: data.id, details: { name: name.trim() } });
     }
@@ -115,7 +132,7 @@ export default function Companies() {
             <div className="mt-4 space-y-1.5 text-sm text-[#c0cce6]">
               {c.email && <p className="truncate">{c.email}</p>}
               {c.phone && <p>{c.phone}</p>}
-              {c.address && <p className="text-[#8a99b8]">{c.address}</p>}
+              {c.tenant?.name && <p className="text-[#8a99b8]">{c.tenant.name}</p>}
             </div>
           </div>
         ))}
@@ -145,8 +162,17 @@ export default function Companies() {
               </div>
             </div>
             <div>
-              <label className="label">Endereço</label>
-              <input className="input" value={address} onChange={(e) => setAddress(e.target.value)} />
+              <label className="label">Tenant</label>
+              <input
+                className="input"
+                value={tenantName}
+                onChange={(e) => setTenantName(e.target.value)}
+                placeholder="Nome do tenant (criado se não existir)"
+                list="tenant-options"
+              />
+              <datalist id="tenant-options">
+                {tenants.map((t) => <option key={t.id} value={t.name} />)}
+              </datalist>
             </div>
             <div>
               <label className="label">Observações</label>

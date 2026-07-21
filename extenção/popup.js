@@ -16,6 +16,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const FRONTEND_URL = "http://localhost:5173";
   let currentExtractedData = null;
 
+  // Mostra a versão instalada da extensão (lida do manifest).
+  const versionEl = document.getElementById("ext-version");
+  if (versionEl) versionEl.textContent = `versão ${chrome.runtime.getManifest().version}`;
+
   function setUIState(state, options = {}) {
     statusContainer.classList.remove("hidden");
     loadingState.classList.add("hidden");

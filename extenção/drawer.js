@@ -1,0 +1,206 @@
+// Lógica do drawer de registro — roda como página do Side Panel (painel lateral
+// do navegador). Não enxerga o DOM do Crisp; obtém o contexto da conversa e
+// grava o ticket através do service worker (background.js), que aponta para
+// http://localhost:3001 e conversa com o content script da aba ativa.
+
+const $ = (id) => document.getElementById(id);
+
+// ---- Ponte com o background ----
+function send(action, extra) {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({ action, ...extra }, (r) => {
+      if (chrome.runtime.lastError) return resolve({ ok: false, error: chrome.runtime.lastError.message });
+      resolve(r || { ok: false, error: 'sem resposta' });
+    });
+  });
+}
+
+function showError(text) {
+  const el = $('error');
+  if (!text) { el.style.display = 'none'; el.textContent = ''; el.className = 'error'; return; }
+  el.textContent = text;
+  el.className = 'error';
+  el.style.display = 'block';
+}
+function showSuccess(text) {
+  const el = $('error');
+  el.textContent = text;
+  el.className = 'error';
+  el.style.cssText = 'display:block;background:rgba(16,163,74,.12);border:1px solid rgba(16,163,74,.3);color:#34d399;padding:9px 11px;border-radius:9px;font-size:13px;';
+}
+
+// ---- Empresa (combobox) ----
+let companyId = '';
+let searchTimer = null;
+
+function clearCompany() {
+  companyId = '';
+  $('companyChip').style.display = 'none';
+  $('company').style.display = '';
+  $('company').value = '';
+  $('companyList').style.display = 'none';
+}
+
+function selectCompany(c) {
+  if (!c || !c.id) return;
+  companyId = c.id;
+  $('companyChipName').textContent =
+    c.name + (c.tenant ? ` · ${c.tenant}` : c.document ? ` · CNPJ ${c.document}` : '');
+  $('companyChip').style.display = 'flex';
+  $('company').style.display = 'none';
+  $('companyList').style.display = 'none';
+}
+
+function renderCompanyList(results) {
+  const box = $('companyList');
+  box.innerHTML = '';
+  if (!results.length) { box.style.display = 'none'; return; }
+  for (const c of results) {
+    const item = document.createElement('div');
+    item.className = 'combo-item';
+    const nm = document.createElement('div');
+    nm.className = 'nm';
+    nm.textContent = c.name;
+    const mt = document.createElement('div');
+    mt.className = 'mt';
+    mt.textContent = (c.document ? `CNPJ ${c.document}` : 'Sem CNPJ') + (c.tenant ? ` · ${c.tenant}` : '');
+    item.appendChild(nm);
+    item.appendChild(mt);
+    item.addEventListener('mousedown', (e) => { e.preventDefault(); selectCompany(c); });
+    box.appendChild(item);
+  }
+  box.style.display = 'block';
+}
+
+$('company').addEventListener('input', () => {
+  const q = $('company').value.trim();
+  clearTimeout(searchTimer);
+  if (!q) { $('companyList').style.display = 'none'; return; }
+  searchTimer = setTimeout(async () => {
+    const r = await send('searchCompany', { query: q });
+    if (r && r.ok) renderCompanyList((r.data && r.data.results) || []);
+  }, 250);
+});
+$('company').addEventListener('blur', () => setTimeout(() => { $('companyList').style.display = 'none'; }, 150));
+$('companyClear').addEventListener('click', clearCompany);
+
+// ---- Contexto da conversa (perfil + empresa validada) ----
+// Preenche campos vazios sem sobrescrever o que o usuário já digitou.
+function applyContext(r, { fillCompany }) {
+  const ex = (r && r.extra) || {};
+  if (ex.name && !$('name').value) {
+    $('name').value = ex.name;
+    if (!$('subject').value.trim()) $('subject').value = `Atendimento - ${ex.name}`;
+  }
+  if (ex.phone && !$('phone').value) $('phone').value = ex.phone;
+  if (ex.url && !$('url').value) $('url').value = ex.url;
+  if (fillCompany && r && r.found && r.data && !companyId) {
+    selectCompany({
+      id: r.data.id,
+      name: r.data.name || r.data.nome,
+      document: r.data.document || r.data.documento,
+      tenant: r.data.tenant,
+    });
+  }
+}
+
+// Ao abrir o painel, puxa o contexto da conversa atual.
+send('getContext', {}).then((r) => applyContext(r, { fillCompany: true }));
+
+// ---- Validar atendimento (identificar empresa) ----
+const VALIDATE_LABEL = 'Validar atendimento (identificar empresa)';
+function setValidating(on) {
+  const b = $('validate');
+  b.disabled = on;
+  b.textContent = on ? 'Validando...' : VALIDATE_LABEL;
+}
+
+$('validate').addEventListener('click', async () => {
+  const msg = $('validateMsg');
+  msg.textContent = '';
+  msg.className = 'validate-msg';
+  setValidating(true);
+  const r = await send('getContext', {});
+  setValidating(false);
+  if (!r || !r.ok) {
+    msg.textContent = r && r.error === 'not-crisp'
+      ? 'Abra uma conversa no Crisp e tente de novo.'
+      : 'Não consegui ler a conversa do Crisp.';
+    msg.className = 'validate-msg warn';
+    return;
+  }
+  if (r.found && r.data) {
+    selectCompany({
+      id: r.data.id,
+      name: r.data.name || r.data.nome,
+      document: r.data.document || r.data.documento,
+      tenant: r.data.tenant,
+    });
+    applyContext(r, { fillCompany: false });
+    msg.textContent = 'Empresa identificada.';
+    msg.className = 'validate-msg ok';
+  } else {
+    applyContext(r, { fillCompany: false });
+    msg.textContent = 'Nenhuma empresa identificada na conversa.';
+    msg.className = 'validate-msg warn';
+  }
+});
+
+// ---- Atendentes ----
+send('getAttendants', {}).then((r) => {
+  if (!r || !r.ok) return;
+  const list = (r.data && r.data.data) || [];
+  const sel = $('attendant');
+  for (const a of list) {
+    if (a.active === false) continue;
+    const opt = document.createElement('option');
+    opt.value = a.id;
+    opt.textContent = a.name;
+    sel.appendChild(opt);
+  }
+});
+
+// ---- Fechar (fecha o painel lateral) ----
+$('close').addEventListener('click', () => window.close());
+$('cancel').addEventListener('click', () => window.close());
+
+// ---- Submit ----
+$('form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  showError('');
+  const subject = $('subject').value.trim();
+  if (!subject) { showError('Informe o assunto.'); return; }
+
+  const btn = $('submit');
+  btn.disabled = true;
+  btn.textContent = 'Salvando...';
+
+  const ticket = {
+    subject,
+    description: $('description').value.trim() || null,
+    url_atendimento: $('url').value.trim() || null,
+    nome_contato: $('name').value.trim() || null,
+    telefone_contato: $('phone').value.trim() || null,
+    status: $('status').value,
+    sistema: $('sistema').value,
+    company_id: companyId || null,
+    attendant_id: $('attendant').value || null,
+    tags: $('tags').value.split(',').map((t) => t.trim()).filter(Boolean),
+  };
+
+  const r = await send('createTicket', { ticket });
+  if (!r || !r.ok) {
+    showError(`Erro ao salvar: ${(r && r.error) || 'erro desconhecido'}`);
+    btn.disabled = false;
+    btn.textContent = 'Criar ticket';
+    return;
+  }
+
+  const created = (r.data && r.data.data) || {};
+  // Log de auditoria (não bloqueia o fluxo se falhar).
+  send('createLog', { log: { action: 'create', entity: 'ticket', entity_id: created.id, details: { subject, sistema: ticket.sistema } } });
+
+  showSuccess(`Ticket criado: "${subject}". Fechando...`);
+  btn.textContent = 'Criado ✓';
+  setTimeout(() => window.close(), 1200);
+});

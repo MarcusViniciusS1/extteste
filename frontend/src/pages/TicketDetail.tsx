@@ -207,7 +207,7 @@ export default function TicketDetail({ id, onBack }: Props) {
             {tAny.sistema && (
               <>
                 <span>·</span>
-                <span className="bg-white/5 px-2 py-0.5 rounded text-white font-medium">Sistema: {tAny.sistema === 'L' ? 'Linea' : 'Zorte'}</span>
+                <span className="bg-white/5 px-2 py-0.5 rounded text-white font-medium">Sistema: {tAny.sistema === 'L' ? 'Lonngren' : 'Zorte'}</span>
               </>
             )}
           </div>

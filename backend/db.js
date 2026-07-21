@@ -49,7 +49,6 @@ const initDb = async () => {
         documento VARCHAR(50),
         email VARCHAR(255),
         telefone VARCHAR(50),
-        endereco TEXT,
         observacoes TEXT,
         inquilino_id UUID,
         criado_em TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,

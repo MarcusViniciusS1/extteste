@@ -207,7 +207,7 @@ export default function Registro() {
               <label className="label">Sistema</label>
               <select className="input" value={sistema} onChange={(e) => setSistema(e.target.value as TicketSystem)}>
                 <option value="Z">Z — Zorte</option>
-                <option value="L">L — Linea</option>
+                <option value="L">L — Lonngren</option>
               </select>
             </div>
 

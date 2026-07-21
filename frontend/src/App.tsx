@@ -87,14 +87,9 @@ export default function App() {
   return (
     <div className="flex h-screen overflow-hidden">
       <aside className="flex w-64 flex-shrink-0 flex-col border-r border-[#1f2d4d] bg-[#0b1220]/80 backdrop-blur">
-        <div className="flex items-center gap-3 px-5 py-5 border-b border-[#1f2d4d]">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-[#2f7ff0] to-[#16b89a] shadow-lg shadow-[#2f7ff0]/30">
-            <Ticket className="h-5 w-5 text-white" />
-          </div>
-          <div>
-            <h1 className="text-sm font-bold tracking-tight">Zticket</h1>
-            <p className="text-[11px] text-[#8a99b8]">Sistema de Atendimento</p>
-          </div>
+        <div className="flex flex-col gap-2 px-5 py-5 border-b border-[#1f2d4d]">
+          <img src="/zorte.png" alt="Zorte — Software para transportadoras" className="h-auto w-full max-w-[180px] self-start" />
+          <p className="text-[11px] text-[#8a99b8]">Sistema de Atendimento</p>
         </div>
 
         <nav className="flex-1 space-y-1 overflow-y-auto p-3">
