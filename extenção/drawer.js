@@ -94,6 +94,11 @@ function applyContext(r, { fillCompany }) {
   }
   if (ex.phone && !$('phone').value) $('phone').value = ex.phone;
   if (ex.url && !$('url').value) $('url').value = ex.url;
+  // Canal/origem detectado (Chat, WhatsApp...): só na abertura, para não
+  // sobrescrever uma escolha manual do usuário numa revalidação.
+  if (fillCompany && ex.channel && ['chat', 'whatsapp', 'email', 'telefone'].includes(ex.channel)) {
+    $('canal').value = ex.channel;
+  }
   if (fillCompany && r && r.found && r.data && !companyId) {
     selectCompany({
       id: r.data.id,
@@ -183,6 +188,7 @@ $('form').addEventListener('submit', async (e) => {
     telefone_contato: $('phone').value.trim() || null,
     status: $('status').value,
     sistema: $('sistema').value,
+    channel: $('canal').value,
     company_id: companyId || null,
     attendant_id: $('attendant').value || null,
     tags: $('tags').value.split(',').map((t) => t.trim()).filter(Boolean),

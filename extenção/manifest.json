@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Crisp Tenant Finder",
-  "version": "2.4.3",
+  "version": "2.5.0",
   "description": "Integração automatizada entre o Crisp e o sistema interno local. Registra atendimento por um painel lateral (Side Panel) do navegador, sem tampar o Crisp.",
   "permissions": [
     "activeTab",

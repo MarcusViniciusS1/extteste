@@ -8,6 +8,29 @@
 
 // Lê o widget de perfil da conversa aberta: candidatos (cnpj/empresa/tenant/tags),
 // telefone, nome do contato e a URL atual.
+
+// Detecta o canal/origem da conversa aberta (chat, whatsapp, email, telefone)
+// a partir do ícone/tooltip de origem do Crisp. Usa o nome do ícone (independe
+// do idioma) e cai para o texto do tooltip como reforço.
+function detectChannel() {
+  try {
+    const activeItem = document.querySelector(
+      '[class*="conversation-menu-item"][class*="--active"], [class*="conversation-menu-item"][class*="--selected"], [class*="conversation-menu-item"][aria-selected="true"]'
+    );
+    const scope = activeItem || document;
+    const useEl = scope.querySelector('.c-conversation-menu-item-headline__origin use');
+    const href = useEl ? (useEl.getAttribute('xlink:href') || useEl.getAttribute('href') || '') : '';
+    const tip = scope.querySelector('.c-conversation-menu-item-headline__origin .c-base-tooltip__default');
+    const tipText = tip ? tip.textContent : '';
+    const hay = (href + ' ' + tipText).toLowerCase();
+    if (/whats/.test(hay)) return 'whatsapp';
+    if (/message_bubble|chat/.test(hay)) return 'chat';
+    if (/mail|email|envelope/.test(hay)) return 'email';
+    if (/phone|telep|call|sms/.test(hay)) return 'telefone';
+  } catch { /* ignora */ }
+  return '';
+}
+
 function extractProfile() {
   let candidates = [];
   let phone = "";
@@ -64,12 +87,19 @@ function extractProfile() {
       }
     }
 
+    // Empresa vinculada exibida no perfil (ex.: "DFA - TRANSPORTES COMERCIO...").
+    const employmentNode = document.querySelector('.c-conversation-profile__employment');
+    if (employmentNode && employmentNode.textContent) {
+      const emp = employmentNode.textContent.trim();
+      if (emp) candidates.push(emp);
+    }
+
     candidates = [...new Set(candidates.filter(c => c))];
   } catch (error) {
     /* ignora falhas de leitura do DOM */
   }
 
-  return { candidates, url: currentUrl, phone, name: personName };
+  return { candidates, url: currentUrl, phone, name: personName, channel: detectChannel() };
 }
 
 // Extrai o perfil e valida a empresa no banco (mesma lógica do popup).
@@ -90,7 +120,7 @@ async function validateCurrent() {
   return {
     found: !!data,
     data,
-    extra: { name: profile.name, phone: profile.phone, url: profile.url || location.href },
+    extra: { name: profile.name, phone: profile.phone, url: profile.url || location.href, channel: profile.channel || '' },
   };
 }
 

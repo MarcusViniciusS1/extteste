@@ -210,6 +210,14 @@ export default function TicketDetail({ id, onBack }: Props) {
                 <span className="bg-white/5 px-2 py-0.5 rounded text-white font-medium">Sistema: {tAny.sistema === 'L' ? 'Lonngren' : 'Zorte'}</span>
               </>
             )}
+            {tAny.channel && (
+              <>
+                <span>·</span>
+                <span className="bg-white/5 px-2 py-0.5 rounded text-white font-medium">
+                  Canal: {({ chat: 'Chat', whatsapp: 'WhatsApp', email: 'E-mail', telefone: 'Telefone', presencial: 'Presencial', api: 'API' }[tAny.channel as string] || tAny.channel)}
+                </span>
+              </>
+            )}
           </div>
         </div>
 
