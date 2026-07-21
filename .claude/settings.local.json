@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(node --check index.js)",
+      "Bash(node --check db.js)",
+      "Bash(node --check resources.js)"
+    ]
+  }
+}

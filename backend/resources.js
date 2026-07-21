@@ -1,0 +1,140 @@
+// Mapa entre os nomes/campos em inglês que o app usa e o schema real em
+// português no Postgres local. Isso é o único lugar que "sabe" que o banco
+// está em português — o resto do server e o app inteiro continuam falando
+// inglês (companies, contacts, attendants, tickets...).
+
+export const RESOURCES = {
+  companies: {
+    table: 'empresas',
+    columns: {
+      id: 'id',
+      name: 'nome',
+      document: 'documento',
+      email: 'email',
+      phone: 'telefone',
+      address: 'endereco',
+      notes: 'observacoes',
+      tenant_id: 'inquilino_id',
+      created_at: 'criado_em',
+      updated_at: 'atualizado_em',
+    },
+    jsonb: [],
+    embeds: {
+      tenant: { resource: 'tenants', localKey: 'tenant_id', foreignKey: 'id' },
+    },
+  },
+  tenants: {
+    table: 'inquilinos',
+    columns: {
+      id: 'id',
+      name: 'nome',
+      slug: 'slug',
+      created_at: 'criado_em',
+      updated_at: 'atualizado_em',
+    },
+    jsonb: [],
+  },
+  contacts: {
+    table: 'contatos',
+    columns: {
+      id: 'id',
+      company_id: 'empresa_id',
+      name: 'nome',
+      email: 'email',
+      phone: 'telefone',
+      position: 'cargo',
+      notes: 'observacoes',
+      created_at: 'criado_em',
+      updated_at: 'atualizado_em',
+    },
+    jsonb: [],
+    embeds: {
+      company: { resource: 'companies', localKey: 'company_id', foreignKey: 'id' },
+    },
+  },
+  attendants: {
+    table: 'atendentes',
+    columns: {
+      id: 'id',
+      name: 'nome',
+      email: 'email',
+      phone: 'telefone',
+      role: 'cargo',
+      department: 'departamento',
+      active: 'ativo',
+      created_at: 'criado_em',
+      updated_at: 'atualizado_em',
+    },
+    jsonb: [],
+  },
+  tickets: {
+    table: 'tickets',
+    columns: {
+      id: 'id',
+      ticket_number: 'numero_ticket',
+      subject: 'assunto',
+      description: 'descricao',
+      status: 'status',
+      priority: 'prioridade',
+      channel: 'canal',
+      company_id: 'empresa_id',
+      contact_id: 'contato_id',
+      attendant_id: 'atendente_id',
+      due_date: 'data_limite',
+      sistema: 'sistema',
+      tags: 'tags',
+      created_at: 'criado_em',
+      updated_at: 'atualizado_em',
+      closed_at: 'fechado_em',
+    },
+    jsonb: [],
+    embeds: {
+      company: { resource: 'companies', localKey: 'company_id', foreignKey: 'id' },
+      contact: { resource: 'contacts', localKey: 'contact_id', foreignKey: 'id' },
+      attendant: { resource: 'attendants', localKey: 'attendant_id', foreignKey: 'id' },
+    },
+  },
+  ticket_notes: {
+    table: 'notas_ticket',
+    columns: {
+      id: 'id',
+      ticket_id: 'ticket_id',
+      attendant_id: 'atendente_id',
+      note: 'nota',
+      is_internal: 'interna',
+      created_at: 'criado_em',
+    },
+    jsonb: [],
+    embeds: {
+      attendant: { resource: 'attendants', localKey: 'attendant_id', foreignKey: 'id' },
+    },
+  },
+  system_logs: {
+    table: 'logs_sistema',
+    columns: {
+      id: 'id',
+      action: 'acao',
+      entity: 'entidade',
+      entity_id: 'entidade_id',
+      details: 'detalhes',
+      created_at: 'criado_em',
+    },
+    jsonb: ['details'],
+  },
+  api_connections: {
+    table: 'conexoes_api',
+    columns: {
+      id: 'id',
+      name: 'nome',
+      type: 'tipo',
+      endpoint: 'endpoint',
+      api_key_ref: 'referencia_chave_api',
+      status: 'status',
+      last_sync_at: 'ultima_sincronizacao',
+      config: 'configuracao',
+      created_at: 'criado_em',
+      updated_at: 'atualizado_em',
+    },
+    jsonb: ['config'],
+  },
+};

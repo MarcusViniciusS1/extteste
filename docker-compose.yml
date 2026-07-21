@@ -1,0 +1,17 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: zorte_ticket_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: zorte_tickets
+    ports:
+      - "5432:5432"
+    volumes:
+      - zorte_pgdata:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+volumes:
+  zorte_pgdata:
