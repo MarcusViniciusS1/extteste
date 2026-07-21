@@ -10,6 +10,7 @@ import Attendants from './pages/Attendants';
 import ApiConnections from './pages/ApiConnections';
 import SystemLogs from './pages/SystemLogs';
 import NewTicketModal from './components/NewTicketModal';
+import Registro from './pages/Registro';
 
 export type Page =
   | { name: 'dashboard' }
@@ -19,10 +20,24 @@ export type Page =
   | { name: 'companies' }
   | { name: 'attendants' }
   | { name: 'api' }
-  | { name: 'logs' };
+  | { name: 'logs' }
+  | { name: 'registro' }; // Adicionado a página de registro
+
+// Função inteligente que lê a URL ao abrir o sistema
+const getInitialPage = (): Page => {
+  const path = window.location.pathname;
+  if (path.startsWith('/registro')) return { name: 'registro' };
+  if (path.startsWith('/tickets')) return { name: 'tickets' };
+  if (path.startsWith('/contacts')) return { name: 'contacts' };
+  if (path.startsWith('/companies')) return { name: 'companies' };
+  if (path.startsWith('/attendants')) return { name: 'attendants' };
+  if (path.startsWith('/api')) return { name: 'api' };
+  if (path.startsWith('/logs')) return { name: 'logs' };
+  return { name: 'dashboard' };
+};
 
 export default function App() {
-  const [page, setPage] = useState<Page>({ name: 'dashboard' });
+  const [page, setPage] = useState<Page>(getInitialPage()); // Inicia com base na URL
   const [showNewTicket, setShowNewTicket] = useState(false);
   const [counts, setCounts] = useState({ tickets: 0, companies: 0, contacts: 0, attendants: 0 });
 
@@ -41,9 +56,21 @@ export default function App() {
     });
   }
 
+  // Atualiza a URL do navegador automaticamente quando clica no menu lateral
   useEffect(() => {
+    if (page.name !== 'ticket') {
+      const newPath = page.name === 'dashboard' ? '/' : `/${page.name}`;
+      if (window.location.pathname !== newPath) {
+        window.history.pushState({}, '', newPath);
+      }
+    }
     refreshCounts();
   }, [page]);
+
+  // Se a página for /registro, renderiza apenas ela em TELA CHEIA (sem a barra lateral)
+  if (page.name === 'registro') {
+    return <Registro />;
+  }
 
   const navItems: { key: Page['name']; label: string; icon: typeof Ticket; page: Page }[] = [
     { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, page: { name: 'dashboard' } },

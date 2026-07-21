@@ -1,9 +1,8 @@
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   const API_BASE = 'http://localhost:3001/api/empresas';
 
-  // Ação 1: Validar enviando a lista de nomes/segmentos/cnpj
   if (request.action === "searchDatabase") {
-    const candidates = request.query; // Agora é um array
+    const candidates = request.query;
 
     fetch(`${API_BASE}/validar`, {
       method: 'POST',
@@ -28,7 +27,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true; 
   }
 
-  // Ação 2: Testar conexão com o banco de dados
   if (request.action === "testConnection") {
     fetch(`${API_BASE}?limit=1`)
       .then(response => {

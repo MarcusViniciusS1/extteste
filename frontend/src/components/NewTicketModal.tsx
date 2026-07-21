@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Search, X, Building2 } from 'lucide-react';
+import { Search, X, Building2, Link as LinkIcon, User, Phone } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { Attendant, Company, Contact, TicketPriority, TicketSystem } from '../lib/types';
+import { Attendant, Company, Contact, TicketSystem } from '../lib/types';
 import Modal from './Modal';
-import { PRIORITY_LABELS } from '../lib/types';
 
 interface Props {
   onClose: () => void;
@@ -17,20 +16,19 @@ export default function NewTicketModal({ onClose, onCreated }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  // Data/hora de abertura: definida automaticamente com o momento atual.
-  const [openedAt] = useState(() => new Date());
-
   const [subject, setSubject] = useState('');
   const [description, setDescription] = useState('');
+  const [urlAtendimento, setUrlAtendimento] = useState('');
+  const [nomeContato, setNomeContato] = useState('');
+  const [telefoneContato, setTelefoneContato] = useState('');
+
   const [status, setStatus] = useState('novo');
-  const [priority, setPriority] = useState<TicketPriority>('media');
   const [sistema, setSistema] = useState<TicketSystem>('Z');
   const [companyId, setCompanyId] = useState('');
   const [contactId, setContactId] = useState('');
   const [attendantId, setAttendantId] = useState('');
   const [tags, setTags] = useState('');
 
-  // Busca de empresa (por nome, CNPJ ou tenant)
   const [companyQuery, setCompanyQuery] = useState('');
   const [companyOpen, setCompanyOpen] = useState(false);
 
@@ -44,6 +42,39 @@ export default function NewTicketModal({ onClose, onCreated }: Props) {
       setContacts(co.data ?? []);
       setAttendants(a.data ?? []);
     });
+
+    const href = window.location.href;
+    if (href.includes('?')) {
+      const queryString = href.split('?')[1];
+      const params = new URLSearchParams(queryString);
+      
+      const compId = params.get('company_id');
+      const urlParam = params.get('url');
+      const nameParam = params.get('name');
+      const phoneParam = params.get('phone');
+
+      if (compId) setCompanyId(compId);
+      if (urlParam) setUrlAtendimento(urlParam);
+      if (nameParam) setNomeContato(nameParam);
+      if (phoneParam) setTelefoneContato(phoneParam);
+
+      if (nameParam) {
+        setSubject(`Atendimento - ${nameParam}`);
+      }
+
+      if (params.has('new_ticket')) {
+        params.delete('new_ticket');
+        params.delete('company_id');
+        params.delete('url');
+        params.delete('name');
+        params.delete('phone');
+        
+        const newQuery = params.toString();
+        const basePath = href.split('?')[0];
+        const newUrl = basePath + (newQuery ? `?${newQuery}` : '');
+        window.history.replaceState({}, document.title, newUrl);
+      }
+    }
   }, []);
 
   const selectedCompany = useMemo(
@@ -73,19 +104,24 @@ export default function NewTicketModal({ onClose, onCreated }: Props) {
     if (!subject.trim()) return;
     setSaving(true);
     setError('');
+    
+    const ticketData: any = {
+      subject: subject.trim(),
+      description: description.trim() || null,
+      url_atendimento: urlAtendimento.trim() || null,
+      nome_contato: nomeContato.trim() || null,
+      telefone_contato: telefoneContato.trim() || null,
+      status,
+      sistema,
+      company_id: companyId || null,
+      contact_id: contactId || null,
+      attendant_id: attendantId || null,
+      tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
+    };
+
     const { data, error } = await supabase
       .from('tickets')
-      .insert({
-        subject: subject.trim(),
-        description: description.trim() || null,
-        status,
-        priority,
-        sistema,
-        company_id: companyId || null,
-        contact_id: contactId || null,
-        attendant_id: attendantId || null,
-        tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
-      })
+      .insert(ticketData)
       .select('id')
       .single();
 
@@ -94,12 +130,14 @@ export default function NewTicketModal({ onClose, onCreated }: Props) {
       setSaving(false);
       return;
     }
+    
     await supabase.from('system_logs').insert({
       action: 'create',
       entity: 'ticket',
       entity_id: data.id,
       details: { subject: subject.trim(), sistema },
     });
+    
     setSaving(false);
     onCreated(data.id);
   }
@@ -107,9 +145,51 @@ export default function NewTicketModal({ onClose, onCreated }: Props) {
   return (
     <Modal title="Novo Ticket" subtitle="Registre um novo atendimento" onClose={onClose} size="lg">
       <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className="label">Assunto *</label>
-          <input className="input" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Resumo do atendimento" autoFocus />
+        
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <label className="label">Assunto *</label>
+            <input className="input" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Resumo do atendimento" autoFocus />
+          </div>
+          
+          <div>
+            <label className="label">Nome do Contato</label>
+            <div className="relative">
+              <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#5a6a8a]" />
+              <input 
+                className="input pl-9" 
+                value={nomeContato} 
+                onChange={(e) => setNomeContato(e.target.value)} 
+                placeholder="Nome do cliente atual" 
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="label">Telefone / WhatsApp</label>
+            <div className="relative">
+              <Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#5a6a8a]" />
+              <input 
+                className="input pl-9" 
+                value={telefoneContato} 
+                onChange={(e) => setTelefoneContato(e.target.value)} 
+                placeholder="Número de WhatsApp do cliente" 
+              />
+            </div>
+          </div>
+
+          <div className="sm:col-span-2">
+            <label className="label">URL do Atendimento (Opcional)</label>
+            <div className="relative">
+              <LinkIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#5a6a8a]" />
+              <input 
+                className="input pl-9" 
+                value={urlAtendimento} 
+                onChange={(e) => setUrlAtendimento(e.target.value)} 
+                placeholder="https://app.crisp.chat/..." 
+              />
+            </div>
+          </div>
         </div>
 
         <div>
@@ -129,29 +209,15 @@ export default function NewTicketModal({ onClose, onCreated }: Props) {
             </select>
           </div>
           <div>
-            <label className="label">Prioridade</label>
-            <select className="input" value={priority} onChange={(e) => setPriority(e.target.value as TicketPriority)}>
-              {Object.entries(PRIORITY_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
             <label className="label">Sistema</label>
             <select className="input" value={sistema} onChange={(e) => setSistema(e.target.value as TicketSystem)}>
               <option value="Z">Z — Zorte</option>
               <option value="L">L — Linea</option>
             </select>
           </div>
-          <div>
-            <label className="label">Data de abertura</label>
-            <input className="input opacity-70" value={openedAt.toLocaleString('pt-BR')} readOnly title="Definida automaticamente com a data e hora atuais" />
-          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
-          {/* Empresa — busca por nome, CNPJ ou tenant */}
           <div>
             <label className="label">Empresa</label>
             {selectedCompany ? (

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Search, Filter, Ticket as TicketIcon, Plus } from 'lucide-react';
+import { Search, Filter, Ticket as TicketIcon, Plus, ExternalLink } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Ticket, TicketStatus, TicketPriority, STATUS_LABELS, PRIORITY_LABELS, CHANNEL_LABELS } from '../lib/types';
 import { StatusBadge, PriorityBadge } from '../components/Badges';
@@ -15,6 +15,19 @@ export default function Tickets({ onOpen, onNewTicket }: Props) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
+
+  // Verifica os parâmetros na URL de forma segura (lida com HashRouter e BrowserRouter)
+  useEffect(() => {
+    const href = window.location.href;
+    if (href.includes('new_ticket=1')) {
+      // Dá um tempo de 150ms para a página base carregar antes de disparar o modal
+      const timer = setTimeout(() => {
+        onNewTicket();
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -95,6 +108,7 @@ export default function Tickets({ onOpen, onNewTicket }: Props) {
                 <tr className="border-b border-[#1f2d4d] text-left text-xs uppercase tracking-wide text-[#8a99b8]">
                   <th className="px-4 py-3 font-medium">#</th>
                   <th className="px-4 py-3 font-medium">Assunto</th>
+                  <th className="px-4 py-3 font-medium">Link Crisp</th>
                   <th className="px-4 py-3 font-medium">Empresa</th>
                   <th className="px-4 py-3 font-medium">Atendente</th>
                   <th className="px-4 py-3 font-medium">Canal</th>
@@ -119,6 +133,22 @@ export default function Tickets({ onOpen, onNewTicket }: Props) {
                             <span key={tag} className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-[#8a99b8]">{tag}</span>
                           ))}
                         </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {/* Ignora erro do TS para propriedades novas adicionadas dinamicamente */}
+                      {(t as any).url_atendimento ? (
+                        <a 
+                          href={(t as any).url_atendimento} 
+                          target="_blank" 
+                          rel="noreferrer" 
+                          className="flex items-center gap-1 text-[#5b9cf5] hover:text-white transition-colors"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <ExternalLink className="h-4 w-4" /> Abrir
+                        </a>
+                      ) : (
+                        <span className="text-[#8a99b8]">—</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-[#c0cce6]">{t.company?.name ?? '—'}</td>
