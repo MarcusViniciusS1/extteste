@@ -1,12 +1,8 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Save, Trash2, MessageSquarePlus, Clock, User, Building2, Tag, Sparkles, Copy, Wand2 } from 'lucide-react';
+import { ArrowLeft, Trash2, Save, Building2, User, Tag, MessageSquare, Send, CheckCircle2, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import {
-  Ticket as TicketType, TicketNote, Attendant, Company, Contact,
-  TicketStatus, TicketPriority, TicketChannel, STATUS_LABELS, PRIORITY_LABELS, CHANNEL_LABELS,
-} from '../lib/types';
-import { StatusBadge, PriorityBadge } from '../components/Badges';
-import { analyzeTicket as aiAnalyzeTicket, getAiStatus, TicketAnalysis } from '../lib/ai';
+import { Ticket, Company, Contact, Attendant, TicketNote, STATUS_LABELS } from '../lib/types';
+import { StatusBadge } from '../components/Badges';
 
 interface Props {
   id: string;
@@ -14,198 +10,245 @@ interface Props {
 }
 
 export default function TicketDetail({ id, onBack }: Props) {
-  const [ticket, setTicket] = useState<TicketType | null>(null);
-  const [notes, setNotes] = useState<TicketNote[]>([]);
-  const [attendants, setAttendants] = useState<Attendant[]>([]);
+  const [ticket, setTicket] = useState<Ticket | null>(null);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [attendants, setAttendants] = useState<Attendant[]>([]);
+  const [notes, setNotes] = useState<TicketNote[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [newNote, setNewNote] = useState('');
-  const [noteInternal, setNoteInternal] = useState(false);
-  const [addNoteAttendant, setAddNoteAttendant] = useState('');
 
-  // editable fields
+  // Campos editáveis do formulário
   const [subject, setSubject] = useState('');
   const [description, setDescription] = useState('');
-  const [status, setStatus] = useState<TicketStatus>('novo');
-  const [priority, setPriority] = useState<TicketPriority>('media');
-  const [channel, setChannel] = useState<TicketChannel>('telefone');
+  const [status, setStatus] = useState('novo');
   const [companyId, setCompanyId] = useState('');
   const [contactId, setContactId] = useState('');
   const [attendantId, setAttendantId] = useState('');
-  const [dueDate, setDueDate] = useState('');
-  const [tags, setTags] = useState('');
+  const [tagsInput, setTagsInput] = useState('');
 
-  // IA (Claude)
-  const [aiConfigured, setAiConfigured] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
-  const [analysis, setAnalysis] = useState<TicketAnalysis | null>(null);
-  const [aiError, setAiError] = useState('');
+  // Nova nota
+  const [newNote, setNewNote] = useState('');
+  const [noteAttendantId, setNoteAttendantId] = useState('');
+  const [isInternal, setIsInternal] = useState(true);
 
-  async function load() {
+  // Modal de Finalização
+  const [showFinalizeModal, setShowFinalizeModal] = useState(false);
+  const [solutionNote, setSolutionNote] = useState('');
+  const [finalizing, setFinalizing] = useState(false);
+
+  useEffect(() => {
+    loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  async function loadData() {
     setLoading(true);
-    const [{ data: t }, { data: n }, { data: att }, { data: comp }, { data: cont }] = await Promise.all([
-      supabase.from('tickets').select('*, company(*), contact(*), attendant(*)').eq('id', id).maybeSingle(),
-      supabase.from('ticket_notes').select('*, attendant(*)').eq('ticket_id', id).order('created_at', { ascending: false }),
-      supabase.from('attendants').select('*').order('name'),
+    const [tRes, cRes, coRes, aRes, nRes] = await Promise.all([
+      supabase.from('tickets').select('*, company(*), contact(*), attendant(*)').eq('id', id).single(),
       supabase.from('companies').select('*').order('name'),
-      supabase.from('contacts').select('*, company(*)').order('name'),
+      supabase.from('contacts').select('*').order('name'),
+      supabase.from('attendants').select('*').eq('active', true).order('name'),
+      supabase.from('notas_ticket').select('*, attendant(*)').eq('ticket_id', id).order('criado_em', { ascending: true }),
     ]);
-    setTicket(t);
-    setNotes(n ?? []);
-    setAttendants(att ?? []);
-    setCompanies(comp ?? []);
-    setContacts(cont ?? []);
-    if (t) {
-      setSubject(t.subject);
-      setDescription(t.description ?? '');
-      setStatus(t.status);
-      setPriority(t.priority);
-      setChannel(t.channel);
-      setCompanyId(t.company_id ?? '');
-      setContactId(t.contact_id ?? '');
-      setAttendantId(t.attendant_id ?? '');
-      setDueDate(t.due_date ? new Date(t.due_date).toISOString().slice(0, 16) : '');
-      setTags((t.tags ?? []).join(', '));
+
+    if (tRes.data) {
+      const t = tRes.data as any;
+      setTicket(t);
+      setSubject(t.subject || '');
+      setDescription(t.descricao || '');
+      setStatus(t.status || 'novo');
+      setCompanyId(t.company_id || '');
+      setContactId(t.contact_id || '');
+      setAttendantId(t.attendant_id || '');
+      setTagsInput(Array.isArray(t.tags) ? t.tags.join(', ') : '');
+
+      if (!t.contact_id && t.telefone_contato && coRes.data) {
+        const cleanPhone = t.telefone_contato.replace(/\D/g, '');
+        const matchedContact = coRes.data.find(c => c.phone && c.phone.replace(/\D/g, '').includes(cleanPhone));
+        if (matchedContact) {
+          setContactId(matchedContact.id);
+        }
+      }
     }
+
+    setCompanies(cRes.data ?? []);
+    setContacts(coRes.data ?? []);
+    setAttendants(aRes.data ?? []);
+    setNotes(nRes.data ?? []);
     setLoading(false);
   }
 
-  useEffect(() => { load(); }, [id]);
-  useEffect(() => { setAnalysis(null); setAiError(''); }, [id]);
-  useEffect(() => { getAiStatus().then((s) => setAiConfigured(s.configured)); }, []);
-
-  async function handleAnalyze() {
-    setAnalyzing(true);
-    setAiError('');
-    try {
-      setAnalysis(await aiAnalyzeTicket(id));
-    } catch (err) {
-      setAiError(err instanceof Error ? err.message : 'Erro ao analisar o ticket.');
-    } finally {
-      setAnalyzing(false);
-    }
-  }
-
   async function handleSave() {
-    if (!ticket) return;
     setSaving(true);
-    const { error } = await supabase.from('tickets').update({
+    const tags = tagsInput.split(',').map((t) => t.trim()).filter(Boolean);
+
+    const updatePayload: any = {
       subject: subject.trim(),
-      description: description.trim() || null,
+      descricao: description.trim() || null,
       status,
-      priority,
-      channel,
       company_id: companyId || null,
       contact_id: contactId || null,
       attendant_id: attendantId || null,
-      due_date: dueDate ? new Date(dueDate).toISOString() : null,
-      tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
-      closed_at: status === 'fechado' && !ticket.closed_at ? new Date().toISOString() : ticket.closed_at,
-    }).eq('id', id);
+      tags,
+    };
+
+    const { error } = await supabase.from('tickets').update(updatePayload).eq('id', id);
+
     if (!error) {
-      await supabase.from('system_logs').insert({
-        action: 'update', entity: 'ticket', entity_id: id, details: { subject: subject.trim() },
-      });
-      await load();
+      await loadData();
     }
     setSaving(false);
   }
 
   async function handleDelete() {
-    if (!confirm('Excluir este ticket permanentemente?')) return;
+    if (!window.confirm('Tem certeza que deseja excluir este ticket?')) return;
     await supabase.from('tickets').delete().eq('id', id);
-    await supabase.from('system_logs').insert({ action: 'delete', entity: 'ticket', entity_id: id });
     onBack();
   }
 
   async function handleAddNote(e: React.FormEvent) {
     e.preventDefault();
     if (!newNote.trim()) return;
-    const { data } = await supabase.from('ticket_notes').insert({
+
+    // Salva usando as colunas corretas do banco (ticket_id, atendant_id/atendente_id, nota, interna)
+    await supabase.from('notas_ticket').insert({
       ticket_id: id,
-      attendant_id: addNoteAttendant || null,
-      note: newNote.trim(),
-      is_internal: noteInternal,
-    }).select('*, attendant(*)').single();
-    if (data) {
-      setNotes([data, ...notes]);
-      setNewNote('');
-      setNoteInternal(false);
-    }
+      atendant_id: noteAttendantId || attendantId || null,
+      nota: newNote.trim(),
+      interna: isInternal,
+    });
+
+    setNewNote('');
+    loadData();
   }
 
-  if (loading) return <div className="py-16 text-center text-sm text-[#8a99b8]">Carregando...</div>;
-  if (!ticket) return <div className="py-16 text-center text-sm text-[#f87171]">Ticket não encontrado.</div>;
+  // Finalizar ticket com nota de solução obrigatória
+  async function handleFinalizeSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!solutionNote.trim()) return;
+
+    setFinalizing(true);
+
+    // 1. Salva a nota com a solução do problema
+    await supabase.from('notas_ticket').insert({
+      ticket_id: id,
+      atendant_id: attendantId || null,
+      nota: `[SOLUÇÃO DO PROBLEMA]: ${solutionNote.trim()}`,
+      interna: false, // Visível/importante
+    });
+
+    // 2. Altera o status do ticket para resolvido/fechado
+    const { error } = await supabase.from('tickets').update({
+      status: 'resolvido',
+      fechado_em: new Date().toISOString()
+    }).eq('id', id);
+
+    if (!error) {
+      setShowFinalizeModal(false);
+      setSolutionNote('');
+      await loadData();
+    }
+    setFinalizing(false);
+  }
+
+  if (loading) {
+    return <div className="py-20 text-center text-sm text-[#8a99b8]">Carregando detalhes do ticket...</div>;
+  }
+
+  if (!ticket) {
+    return <div className="py-20 text-center text-sm text-[#8a99b8]">Ticket não encontrado.</div>;
+  }
+
+  const tAny = ticket as any;
+  const isResolved = ticket.status === 'resolvido' || ticket.status === 'fechado';
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-5xl mx-auto space-y-6 pb-12">
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <button onClick={onBack} className="btn-ghost">
+        <button 
+          onClick={onBack} 
+          className="flex items-center gap-2 text-sm text-[#8a99b8] hover:text-white transition-colors"
+        >
           <ArrowLeft className="h-4 w-4" /> Voltar
         </button>
-        <div className="flex gap-2">
-          <button onClick={handleDelete} className="btn-danger">
+        <div className="flex items-center gap-2">
+          {!isResolved && (
+            <button 
+              onClick={() => setShowFinalizeModal(true)} 
+              className="bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-emerald-600/20"
+            >
+              <CheckCircle2 className="h-4 w-4" /> Finalizar Ticket
+            </button>
+          )}
+          <button onClick={handleDelete} className="btn-ghost text-red-400 hover:bg-red-500/10 flex items-center gap-1.5 px-3 py-1.5 text-sm">
             <Trash2 className="h-4 w-4" /> Excluir
           </button>
-          <button onClick={handleSave} disabled={saving} className="btn-primary">
+          <button onClick={handleSave} disabled={saving} className="btn-primary flex items-center gap-1.5 px-4 py-1.5 text-sm">
             <Save className="h-4 w-4" /> {saving ? 'Salvando...' : 'Salvar'}
           </button>
         </div>
       </div>
 
-      {/* Header */}
-      <div className="card p-5">
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#2f7ff0]/10 text-lg font-bold text-[#5b9cf5]">
-            #{ticket.ticket_number ?? '—'}
+      {/* Top Banner do Ticket */}
+      <div className="card p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-sm text-[#5b9cf5] bg-[#5b9cf5]/10 px-2.5 py-1 rounded">
+              #{ticket.ticket_number ?? '—'}
+            </span>
+            <h1 className="text-xl font-bold tracking-tight text-white">{ticket.subject}</h1>
           </div>
-          <div className="flex-1">
-            <h1 className="text-xl font-bold">{ticket.subject}</h1>
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[#8a99b8]">
-              <Clock className="h-3.5 w-3.5" />
-              {ticket.created_at ? new Date(ticket.created_at).toLocaleString('pt-BR') : ''}
-              <StatusBadge status={ticket.status} />
-              <PriorityBadge priority={ticket.priority} />
-            </div>
+          <div className="mt-2 flex items-center gap-4 text-xs text-[#8a99b8]">
+            <span>Criado em {ticket.created_at ? new Date(ticket.created_at).toLocaleString('pt-BR') : ''}</span>
+            <span>·</span>
+            <StatusBadge status={ticket.status} />
+            {tAny.sistema && (
+              <>
+                <span>·</span>
+                <span className="bg-white/5 px-2 py-0.5 rounded text-white font-medium">Sistema: {tAny.sistema === 'L' ? 'Linea' : 'Zorte'}</span>
+              </>
+            )}
           </div>
         </div>
+
+        {tAny.url_atendimento && (
+          <a 
+            href={tAny.url_atendimento} 
+            target="_blank" 
+            rel="noreferrer" 
+            className="btn-ghost border border-[#2f7ff0]/40 text-[#5b9cf5] hover:bg-[#2f7ff0]/10 text-xs px-3 py-2 flex items-center justify-center gap-1.5"
+          >
+            Abrir conversa no Crisp ↗
+          </a>
+        )}
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Edit form */}
-        <div className="card p-5 lg:col-span-2 space-y-4">
-          <h3 className="text-sm font-semibold">Editar Ticket</h3>
+      {/* Grid Principal & Painel Lateral */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        {/* Formulário de Edição */}
+        <div className="lg:col-span-2 card p-6 space-y-4">
+          <h2 className="text-sm font-semibold text-[#8a99b8] uppercase tracking-wider mb-2">Editar Ticket</h2>
+          
           <div>
             <label className="label">Assunto</label>
             <input className="input" value={subject} onChange={(e) => setSubject(e.target.value)} />
           </div>
+
           <div>
             <label className="label">Descrição</label>
-            <textarea className="input min-h-[120px] resize-y" value={description} onChange={(e) => setDescription(e.target.value)} />
+            <textarea className="input min-h-[100px] resize-y" value={description} onChange={(e) => setDescription(e.target.value)} />
           </div>
-          <div className="grid grid-cols-3 gap-4">
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="label">Status</label>
-              <select className="input" value={status} onChange={(e) => setStatus(e.target.value as TicketStatus)}>
+              <select className="input" value={status} onChange={(e) => setStatus(e.target.value)}>
                 {Object.entries(STATUS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
               </select>
             </div>
-            <div>
-              <label className="label">Prioridade</label>
-              <select className="input" value={priority} onChange={(e) => setPriority(e.target.value as TicketPriority)}>
-                {Object.entries(PRIORITY_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="label">Canal</label>
-              <select className="input" value={channel} onChange={(e) => setChannel(e.target.value as TicketChannel)}>
-                {Object.entries(CHANNEL_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-              </select>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="label">Empresa</label>
               <select className="input" value={companyId} onChange={(e) => setCompanyId(e.target.value)}>
@@ -213,15 +256,20 @@ export default function TicketDetail({ id, onBack }: Props) {
                 {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="label">Contato</label>
+              <label className="label">Contato (WhatsApp / Número)</label>
               <select className="input" value={contactId} onChange={(e) => setContactId(e.target.value)}>
                 <option value="">— Nenhum —</option>
-                {contacts.map((c) => <option key={c.id} value={c.id}>{c.name}{c.company ? ` · ${c.company.name}` : ''}</option>)}
+                {contacts.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} {c.phone ? `(${c.phone})` : ''}
+                  </option>
+                ))}
               </select>
             </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="label">Atendente</label>
               <select className="input" value={attendantId} onChange={(e) => setAttendantId(e.target.value)}>
@@ -229,141 +277,165 @@ export default function TicketDetail({ id, onBack }: Props) {
                 {attendants.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
             </div>
-            <div>
-              <label className="label">Data Limite</label>
-              <input type="datetime-local" className="input" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-            </div>
           </div>
+
           <div>
             <label className="label">Tags (separadas por vírgula)</label>
-            <input className="input" value={tags} onChange={(e) => setTags(e.target.value)} />
+            <input className="input" value={tagsInput} onChange={(e) => setTagsInput(e.target.value)} placeholder="ex: suporte, urgente" />
           </div>
         </div>
 
-        {/* Sidebar info */}
-        <div className="space-y-4">
-          <div className="card p-5">
-            <h3 className="mb-3 text-sm font-semibold">Informações</h3>
+        {/* Informações Rápidas e Dados do Crisp capturados */}
+        <div className="space-y-6">
+          <div className="card p-5 space-y-4">
+            <h2 className="text-sm font-semibold text-[#8a99b8] uppercase tracking-wider">Informações do Cliente</h2>
+            
             <div className="space-y-3 text-sm">
-              <InfoRow icon={Building2} label="Empresa" value={ticket.company?.name ?? '—'} />
-              <InfoRow icon={User} label="Contato" value={ticket.contact?.name ?? '—'} />
-              <InfoRow icon={User} label="Atendente" value={ticket.attendant?.name ?? '—'} />
-              <InfoRow icon={Tag} label="Tags" value={(ticket.tags ?? []).join(', ') || '—'} />
-              {ticket.due_date && (
-                <InfoRow icon={Clock} label="Prazo" value={new Date(ticket.due_date).toLocaleString('pt-BR')} />
-              )}
+              <div className="flex items-start gap-3">
+                <User className="h-4 w-4 text-[#5a6a8a] mt-0.5 flex-shrink-0" />
+                <div>
+                  <span className="text-xs text-[#8a99b8] block">Nome Capturado (Crisp)</span>
+                  <span className="text-[#e6edf7] font-medium">{tAny.nome_contato || 'Não informado'}</span>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <span className="text-xs font-bold text-[#5a6a8a] mt-0.5 flex-shrink-0">WPP</span>
+                <div>
+                  <span className="text-xs text-[#8a99b8] block">WhatsApp Business / Telefone</span>
+                  <span className="text-[#e6edf7] font-medium">{tAny.telefone_contato || 'Não informado'}</span>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <Building2 className="h-4 w-4 text-[#5a6a8a] mt-0.5 flex-shrink-0" />
+                <div>
+                  <span className="text-xs text-[#8a99b8] block">Empresa Vinculada</span>
+                  <span className="text-[#e6edf7] font-medium">{ticket.company?.name || 'Nenhuma'}</span>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <Tag className="h-4 w-4 text-[#5a6a8a] mt-0.5 flex-shrink-0" />
+                <div>
+                  <span className="text-xs text-[#8a99b8] block">Tags</span>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {ticket.tags && ticket.tags.length > 0 ? (
+                      ticket.tags.map((tag: string) => (
+                        <span key={tag} className="bg-white/5 text-xs px-2 py-0.5 rounded text-[#8a99b8]">{tag}</span>
+                      ))
+                    ) : (
+                      <span className="text-[#8a99b8]">—</span>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
+
       </div>
 
-      {/* IA */}
-      {aiConfigured && (
-        <div className="card p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h3 className="flex items-center gap-2 text-sm font-semibold">
-              <Sparkles className="h-4 w-4 text-[#a78bfa]" /> Análise com IA (Claude)
-            </h3>
-            <button onClick={handleAnalyze} disabled={analyzing} className="btn-primary">
-              <Sparkles className="h-4 w-4" /> {analyzing ? 'Analisando...' : 'Analisar ticket'}
-            </button>
-          </div>
+      {/* Seção de Notas / Interações */}
+      <div className="card p-6 space-y-6">
+        <h2 className="text-base font-semibold text-white flex items-center gap-2">
+          <MessageSquare className="h-5 w-5 text-[#2f7ff0]" /> Interações / Notas ({notes.length})
+        </h2>
 
-          {aiError && <p className="mt-3 text-sm text-[#f87171]">{aiError}</p>}
-
-          {analysis && (
-            <div className="mt-4 space-y-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="badge border border-white/10 bg-white/5 text-[#c0cce6]">Categoria: {analysis.categoria}</span>
-                <span className="badge border border-white/10 bg-white/5 text-[#c0cce6]">Sentimento: {analysis.sentimento}</span>
-                <span className="badge border border-white/10 bg-white/5 text-[#c0cce6]">Prioridade sugerida: {PRIORITY_LABELS[analysis.prioridade_sugerida]}</span>
-                {analysis.prioridade_sugerida !== priority && (
-                  <button onClick={() => setPriority(analysis.prioridade_sugerida)} className="btn-outline text-xs px-2.5 py-1.5">
-                    <Wand2 className="h-3.5 w-3.5" /> Aplicar prioridade
-                  </button>
-                )}
+        <div className="space-y-4">
+          {notes.map((note) => (
+            <div key={note.id} className="p-4 rounded-lg bg-[#0b1220] border border-[#1f2d4d] space-y-2">
+              <div className="flex items-center justify-between text-xs text-[#8a99b8]">
+                <span className="font-medium text-white">{note.attendant?.name || 'Sistema'}</span>
+                <span>{note.criado_em ? new Date(note.criado_em).toLocaleString('pt-BR') : ''}</span>
               </div>
-
-              <div>
-                <p className="label">Resumo</p>
-                <p className="whitespace-pre-wrap text-sm text-[#c0cce6]">{analysis.resumo}</p>
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between">
-                  <p className="label">Resposta sugerida</p>
-                  <button onClick={() => setNewNote(analysis.resposta_sugerida)} className="btn-outline text-xs px-2.5 py-1.5">
-                    <Copy className="h-3.5 w-3.5" /> Usar como resposta
-                  </button>
-                </div>
-                <p className="mt-1 whitespace-pre-wrap rounded-lg border border-[#1f2d4d] bg-[#0b1220] p-3 text-sm text-[#c0cce6]">{analysis.resposta_sugerida}</p>
-              </div>
-
-              {analysis.proximos_passos.length > 0 && (
-                <div>
-                  <p className="label">Próximos passos</p>
-                  <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-[#c0cce6]">
-                    {analysis.proximos_passos.map((p, i) => <li key={i}>{p}</li>)}
-                  </ul>
-                </div>
-              )}
+              <p className="text-sm text-[#e6edf7] whitespace-pre-wrap">{note.nota}</p>
             </div>
+          ))}
+
+          {notes.length === 0 && (
+            <p className="text-sm text-[#8a99b8] text-center py-4">Nenhuma nota registrada ainda.</p>
           )}
         </div>
-      )}
 
-      {/* Notes */}
-      <div className="card p-5">
-        <h3 className="mb-4 text-sm font-semibold">Interações / Notas ({notes.length})</h3>
-        <form onSubmit={handleAddNote} className="mb-5 space-y-3 rounded-lg border border-[#1f2d4d] bg-[#0b1220] p-4">
-          <textarea className="input min-h-[80px] resize-y" placeholder="Adicionar interação..." value={newNote} onChange={(e) => setNewNote(e.target.value)} />
-          <div className="flex flex-wrap items-center gap-3">
-            <select className="input w-auto" value={addNoteAttendant} onChange={(e) => setAddNoteAttendant(e.target.value)}>
-              <option value="">Sem atendente</option>
-              {attendants.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-            </select>
-            <label className="flex items-center gap-2 text-sm text-[#c0cce6]">
-              <input type="checkbox" checked={noteInternal} onChange={(e) => setNoteInternal(e.target.checked)} className="accent-[#2f7ff0]" />
-              Nota interna
-            </label>
-            <button type="submit" disabled={!newNote.trim()} className="btn-primary ml-auto">
-              <MessageSquarePlus className="h-4 w-4" /> Adicionar
+        {/* Adicionar Nova Nota */}
+        <form onSubmit={handleAddNote} className="space-y-3 pt-4 border-t border-[#1f2d4d]">
+          <textarea
+            className="input min-h-[80px]"
+            placeholder="Adicionar interação ou nota..."
+            value={newNote}
+            onChange={(e) => setNewNote(e.target.value)}
+          />
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="flex items-center gap-4 w-full sm:w-auto">
+              <select className="input text-xs w-auto" value={noteAttendantId} onChange={(e) => setNoteAttendantId(e.target.value)}>
+                <option value="">Atendente responsável</option>
+                {attendants.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+              <label className="flex items-center gap-2 text-xs text-[#8a99b8] cursor-pointer">
+                <input type="checkbox" checked={isInternal} onChange={(e) => setIsInternal(e.target.checked)} className="rounded bg-[#0b1220] border-[#1f2d4d]" />
+                Nota interna
+              </label>
+            </div>
+            <button type="submit" disabled={!newNote.trim()} className="btn-primary w-full sm:w-auto flex items-center justify-center gap-1.5 px-4 py-2 text-sm">
+              <Send className="h-4 w-4" /> Adicionar
             </button>
           </div>
         </form>
+      </div>
 
-        <div className="space-y-3">
-          {notes.length === 0 ? (
-            <p className="py-6 text-center text-sm text-[#8a99b8]">Nenhuma interação registrada.</p>
-          ) : notes.map((n) => (
-            <div key={n.id} className={`rounded-lg border p-4 ${n.is_internal ? 'border-[#f59e0b]/20 bg-[#f59e0b]/5' : 'border-[#1f2d4d] bg-[#0b1220]'}`}>
-              <div className="mb-2 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#2f7ff0]/15 text-xs font-bold text-[#5b9cf5]">
-                    {(n.attendant?.name ?? '?').charAt(0)}
-                  </div>
-                  <span className="text-sm font-medium">{n.attendant?.name ?? 'Sistema'}</span>
-                  {n.is_internal && <span className="badge bg-[#f59e0b]/15 text-[#fbbf24] border border-[#f59e0b]/30">Interna</span>}
-                </div>
-                <span className="text-xs text-[#8a99b8]">{n.created_at ? new Date(n.created_at).toLocaleString('pt-BR') : ''}</span>
-              </div>
-              <p className="whitespace-pre-wrap text-sm text-[#c0cce6]">{n.note}</p>
+      {/* Modal para Finalizar Ticket com Descrição da Solução */}
+      {showFinalizeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="card w-full max-w-lg p-6 space-y-5 bg-[#0b1220] border border-[#1f2d4d] shadow-2xl">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <CheckCircle2 className="h-5 w-5 text-emerald-500" /> Finalizar Atendimento
+              </h3>
+              <button 
+                onClick={() => setShowFinalizeModal(false)}
+                className="text-[#8a99b8] hover:text-white p-1 rounded-lg hover:bg-white/5"
+              >
+                <X className="h-5 w-5" />
+              </button>
             </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
 
-function InfoRow({ icon: Icon, label, value }: { icon: typeof Clock; label: string; value: string }) {
-  return (
-    <div className="flex items-start gap-2.5">
-      <Icon className="mt-0.5 h-4 w-4 flex-shrink-0 text-[#5a6a8a]" />
-      <div>
-        <p className="text-xs text-[#8a99b8]">{label}</p>
-        <p className="text-sm text-[#e6edf7]">{value}</p>
-      </div>
+            <form onSubmit={handleFinalizeSubmit} className="space-y-4">
+              <div>
+                <label className="label">Descrição da Solução do Problema *</label>
+                <p className="text-xs text-[#8a99b8] mb-2">
+                  Informe brevemente como o problema foi resolvido. Esta informação será salva como nota oficial de encerramento.
+                </p>
+                <textarea
+                  className="input min-h-[120px] resize-y"
+                  placeholder="Descreva a solução aplicada..."
+                  value={solutionNote}
+                  onChange={(e) => setSolutionNote(e.target.value)}
+                  required
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-[#1f2d4d]">
+                <button
+                  type="button"
+                  onClick={() => setShowFinalizeModal(false)}
+                  className="btn-ghost px-4 py-2 text-sm"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={finalizing || !solutionNote.trim()}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-5 py-2 rounded-lg text-sm transition-colors flex items-center gap-2 disabled:opacity-50"
+                >
+                  {finalizing ? 'Finalizando...' : 'Confirmar e Finalizar'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

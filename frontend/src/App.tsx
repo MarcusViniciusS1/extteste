@@ -9,7 +9,6 @@ import Companies from './pages/Companies';
 import Attendants from './pages/Attendants';
 import ApiConnections from './pages/ApiConnections';
 import SystemLogs from './pages/SystemLogs';
-import NewTicketModal from './components/NewTicketModal';
 import Registro from './pages/Registro';
 
 export type Page =
@@ -21,9 +20,8 @@ export type Page =
   | { name: 'attendants' }
   | { name: 'api' }
   | { name: 'logs' }
-  | { name: 'registro' }; // Adicionado a página de registro
+  | { name: 'registro' };
 
-// Função inteligente que lê a URL ao abrir o sistema
 const getInitialPage = (): Page => {
   const path = window.location.pathname;
   if (path.startsWith('/registro')) return { name: 'registro' };
@@ -37,8 +35,7 @@ const getInitialPage = (): Page => {
 };
 
 export default function App() {
-  const [page, setPage] = useState<Page>(getInitialPage()); // Inicia com base na URL
-  const [showNewTicket, setShowNewTicket] = useState(false);
+  const [page, setPage] = useState<Page>(getInitialPage());
   const [counts, setCounts] = useState({ tickets: 0, companies: 0, contacts: 0, attendants: 0 });
 
   async function refreshCounts() {
@@ -56,7 +53,6 @@ export default function App() {
     });
   }
 
-  // Atualiza a URL do navegador automaticamente quando clica no menu lateral
   useEffect(() => {
     if (page.name !== 'ticket') {
       const newPath = page.name === 'dashboard' ? '/' : `/${page.name}`;
@@ -67,7 +63,6 @@ export default function App() {
     refreshCounts();
   }, [page]);
 
-  // Se a página for /registro, renderiza apenas ela em TELA CHEIA (sem a barra lateral)
   if (page.name === 'registro') {
     return <Registro />;
   }
@@ -91,7 +86,6 @@ export default function App() {
 
   return (
     <div className="flex h-screen overflow-hidden">
-      {/* Sidebar */}
       <aside className="flex w-64 flex-shrink-0 flex-col border-r border-[#1f2d4d] bg-[#0b1220]/80 backdrop-blur">
         <div className="flex items-center gap-3 px-5 py-5 border-b border-[#1f2d4d]">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-[#2f7ff0] to-[#16b89a] shadow-lg shadow-[#2f7ff0]/30">
@@ -132,17 +126,16 @@ export default function App() {
         </nav>
 
         <div className="p-3 border-t border-[#1f2d4d]">
-          <button onClick={() => setShowNewTicket(true)} className="btn-primary w-full">
+          <button onClick={() => setPage({ name: 'registro' })} className="btn-primary w-full">
             <Ticket className="h-4 w-4" /> Novo Ticket
           </button>
         </div>
       </aside>
 
-      {/* Main */}
       <main className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-7xl p-6 animate-fade-in">
-          {page.name === 'dashboard' && <Dashboard onNavigate={setPage} onNewTicket={() => setShowNewTicket(true)} />}
-          {page.name === 'tickets' && <Tickets onOpen={(id) => setPage({ name: 'ticket', id })} onNewTicket={() => setShowNewTicket(true)} />}
+          {page.name === 'dashboard' && <Dashboard onNavigate={setPage} onNewTicket={() => setPage({ name: 'registro' })} />}
+          {page.name === 'tickets' && <Tickets onOpen={(id) => setPage({ name: 'ticket', id })} onNewTicket={() => setPage({ name: 'registro' })} />}
           {page.name === 'ticket' && <TicketDetail id={page.id} onBack={() => setPage({ name: 'tickets' })} />}
           {page.name === 'contacts' && <Contacts />}
           {page.name === 'companies' && <Companies />}
@@ -151,16 +144,6 @@ export default function App() {
           {page.name === 'logs' && <SystemLogs />}
         </div>
       </main>
-
-      {showNewTicket && (
-        <NewTicketModal
-          onClose={() => setShowNewTicket(false)}
-          onCreated={(id) => {
-            setShowNewTicket(false);
-            setPage({ name: 'ticket', id });
-          }}
-        />
-      )}
     </div>
   );
 }

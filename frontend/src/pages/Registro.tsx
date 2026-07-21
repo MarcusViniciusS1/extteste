@@ -122,7 +122,7 @@ export default function Registro() {
     <div className="max-w-4xl mx-auto py-8 space-y-6">
       <div className="flex items-center gap-4">
         <button 
-          onClick={() => window.history.back()} 
+          onClick={() => window.location.href = '/tickets'} 
           className="p-2 text-[#8a99b8] hover:text-white hover:bg-white/5 rounded-full transition-colors"
           title="Voltar"
         >
@@ -138,11 +138,14 @@ export default function Registro() {
         <form onSubmit={handleSubmit} className="space-y-6">
           
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+            
+            {/* Linha 1: Assunto */}
             <div className="sm:col-span-2">
               <label className="label">Assunto *</label>
               <input className="input" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Resumo do atendimento" autoFocus />
             </div>
 
+            {/* Linha 2: Nome e Telefone */}
             <div>
               <label className="label">Nome do Contato</label>
               <div className="relative">
@@ -169,6 +172,7 @@ export default function Registro() {
               </div>
             </div>
             
+            {/* Linha 3: URL */}
             <div className="sm:col-span-2">
               <label className="label">URL do Atendimento (Opcional)</label>
               <div className="relative">
@@ -181,14 +185,14 @@ export default function Registro() {
                 />
               </div>
             </div>
-          </div>
 
-          <div>
-            <label className="label">Descrição</label>
-            <textarea className="input min-h-[120px] resize-y" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Detalhes do atendimento..." />
-          </div>
+            {/* Linha 4: Descrição */}
+            <div className="sm:col-span-2">
+              <label className="label">Descrição</label>
+              <textarea className="input min-h-[120px] resize-y" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Detalhes do atendimento..." />
+            </div>
 
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+            {/* Linha 5: Status e Sistema */}
             <div>
               <label className="label">Status</label>
               <select className="input" value={status} onChange={(e) => setStatus(e.target.value)}>
@@ -206,9 +210,8 @@ export default function Registro() {
                 <option value="L">L — Linea</option>
               </select>
             </div>
-          </div>
 
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+            {/* Linha 6: Empresa e Atendente */}
             <div className="relative">
               <label className="label">Empresa</label>
               {selectedCompany ? (
@@ -262,6 +265,7 @@ export default function Registro() {
                 </div>
               )}
             </div>
+            
             <div>
               <label className="label">Atendente</label>
               <select className="input" value={attendantId} onChange={(e) => setAttendantId(e.target.value)}>
@@ -269,13 +273,13 @@ export default function Registro() {
                 {attendants.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
             </div>
-          </div>
 
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+            {/* Linha 7: Tags */}
             <div>
               <label className="label">Tags (separadas por vírgula)</label>
               <input className="input" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="urgente, cliente_vip" />
             </div>
+
           </div>
 
           {error && <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-md text-sm text-red-400">{error}</div>}
