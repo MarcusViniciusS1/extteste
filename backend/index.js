@@ -127,13 +127,10 @@ function buildWhere(resource, filters) {
 
 // ---------- Rotas de IA (Claude) ----------
 
-// O frontend consulta isto para saber se deve mostrar os botões de IA.
 app.get('/api/ai/status', (req, res) => {
   res.json({ configured: claudeConfigured, model: process.env.ANTHROPIC_MODEL || 'claude-opus-4-8' });
 });
 
-// Analisa um ticket: carrega o ticket + notas do banco e pede ao Claude um
-// resumo, categoria, sentimento, prioridade sugerida, resposta e próximos passos.
 app.post('/api/ai/analyze-ticket', async (req, res) => {
   try {
     const ticketId = req.body?.ticket_id;
@@ -162,8 +159,6 @@ app.post('/api/ai/analyze-ticket', async (req, res) => {
 
 // ---------- Rotas do Crisp (extensão de navegador) ----------
 
-// Busca livre por nome, tenant ou CNPJ (com/sem pontuação). Retorna empresas
-// com { id, name, document, tenant }.
 async function searchCompanies(q) {
   const query = String(q || '').trim();
   if (!query) return [];
@@ -188,7 +183,6 @@ async function searchCompanies(q) {
   return rows;
 }
 
-// Escolhe a melhor correspondência: CNPJ exato > nome exato > nome mais curto.
 function pickBest(rows, q) {
   const digits = String(q || '').replace(/\D/g, '');
   const lower = String(q || '').toLowerCase().trim();
@@ -201,32 +195,26 @@ function pickBest(rows, q) {
   return rows.slice().sort((a, b) => String(a.name || '').length - String(b.name || '').length)[0] || null;
 }
 
-// Compatibilidade: busca a melhor empresa por nome (usada em /api/lookup/cnpj).
 async function lookupCnpj(company) {
   const rows = await searchCompanies(company);
   return pickBest(rows, company);
 }
 
-// A extensão consulta isto para saber se o Crisp está configurado no backend.
 app.get('/api/crisp/status', (req, res) => {
   res.json({ crisp: crispConfigured });
 });
 
-// Versão mais recente publicada da extensão. Bump aqui quando lançar uma nova.
 const EXTENSION_VERSION = '1.3.1';
 app.get('/api/extension/version', (req, res) => {
   res.json({ version: EXTENSION_VERSION });
 });
 
-// Saúde do backend: responde mesmo se o banco estiver fora, indicando db:false.
 app.get('/api/health', async (req, res) => {
   let db = false;
   try { db = await ping(); } catch { db = false; }
   res.json({ ok: true, db, crisp: crispConfigured });
 });
 
-// Busca livre no banco do Z-Ticket por nome, tenant OU CNPJ (com ou sem
-// pontuação). Não depende do Crisp. Retorna uma lista de empresas.
 app.get('/api/lookup/company', async (req, res) => {
   try {
     const results = await searchCompanies(String(req.query.q || ''));
@@ -236,7 +224,6 @@ app.get('/api/lookup/company', async (req, res) => {
   }
 });
 
-// Só consulta o CNPJ (útil para testes/preview, não grava no Crisp).
 app.get('/api/lookup/cnpj', async (req, res) => {
   try {
     const company = String(req.query.company || '');
@@ -254,8 +241,6 @@ app.get('/api/lookup/cnpj', async (req, res) => {
   }
 });
 
-// Fluxo completo: recebe empresa do cabeçalho da conversa, acha o CNPJ e
-// grava a etiqueta "CNPJ" nos dados da conversa no Crisp.
 app.post('/api/crisp/enrich', async (req, res) => {
   try {
     const { website_id, session_id, company, cnpj, candidates } = req.body || {};
@@ -263,21 +248,18 @@ app.post('/api/crisp/enrich', async (req, res) => {
       throw Object.assign(new Error('website_id e session_id são obrigatórios'), { status: 400 });
     }
 
-    // Monta a lista de tentativas: CNPJ primeiro, depois os candidatos a nome.
     const domCnpj = cnpj ? String(cnpj).trim() : '';
     const queries = [];
     if (domCnpj) queries.push(domCnpj);
     if (Array.isArray(candidates)) for (const c of candidates) if (c) queries.push(String(c).trim());
     if (company) queries.push(String(company).trim());
 
-    // dedupe preservando ordem
     const seen = new Set();
     const uniq = queries.filter((q) => q && !seen.has(q.toLowerCase()) && seen.add(q.toLowerCase()));
     if (!uniq.length) {
       return res.json({ found: false, updated: false, reason: 'nada relacionado a empresa no html' });
     }
 
-    // Tenta cada query; para na primeira empresa que tenha CNPJ ou tenant.
     let match = null;
     let usedQuery = null;
     for (const q of uniq) {
@@ -294,8 +276,8 @@ app.post('/api/crisp/enrich', async (req, res) => {
     }
 
     await updateConversation(website_id, session_id, {
-      dataFields: { CNPJ: finalCnpj },   // grava o CNPJ nos dados da conversa
-      segments: tenant ? [tenant] : [],  // adiciona o tenant como segmento
+      dataFields: { CNPJ: finalCnpj },
+      segments: tenant ? [tenant] : [],
     });
 
     res.json({ found: true, updated: true, query: usedQuery, matched_name: match?.name || null, cnpj: finalCnpj, tenant });
@@ -303,6 +285,69 @@ app.post('/api/crisp/enrich', async (req, res) => {
     res.status(err.status || 500).json({ error: err.message });
   }
 });
+
+
+// ---------- NOVA ROTA DA EXTENSÃO ----------
+// 1. Rota GET: Mantida apenas para testar se a conexão da extensão está viva
+app.get('/api/empresas', async (req, res) => {
+  try {
+    const { limit } = req.query;
+    if (limit === '1') {
+      const result = await pool.query('SELECT id, nome AS name, documento AS document FROM empresas LIMIT 1');
+      return res.json(result.rows);
+    }
+    const result = await pool.query('SELECT id, nome AS name, documento AS document FROM empresas');
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 2. Rota POST: Busca agressiva recebendo VÁRIOS candidatos simultâneos (Tags, Nome, CNPJ)
+app.post('/api/empresas/validar', async (req, res) => {
+  try {
+    const { candidates } = req.body;
+
+    // Se a extensão não mandou nada, retorna falso
+    if (!candidates || !Array.isArray(candidates) || candidates.length === 0) {
+      return res.json({ found: false });
+    }
+
+    // Tira os repetidos
+    const uniq = [...new Set(candidates.map(c => String(c).trim()).filter(Boolean))];
+
+    // Testa candidato por candidato
+    for (const q of uniq) {
+      const like = `%${q}%`;
+      // Extrai os números do candidato (útil se for um CNPJ não formatado testando contra o formatado no DB)
+      const digits = q.replace(/\D/g, '');
+      const digitsLike = digits ? `%${digits}%` : null;
+
+      const result = await pool.query(`
+        SELECT id, nome AS name, documento AS document, endereco AS address
+        FROM empresas
+        WHERE nome ILIKE $1
+           OR endereco ILIKE $1
+           OR documento ILIKE $1
+           OR ($2::text IS NOT NULL AND regexp_replace(coalesce(documento,''), '[^0-9]', '', 'g') LIKE $2)
+        LIMIT 1
+      `, [like, digitsLike]);
+
+      // Se encontrou batendo o nome OR endereco OR CNPJ, já retorna sucesso e para o loop!
+      if (result.rows.length > 0) {
+        return res.json({ found: true, data: result.rows[0] });
+      }
+    }
+
+    // Se rodou tudo e não achou, não existe no banco
+    res.json({ found: false });
+
+  } catch (error) {
+    console.error('❌ Erro na rota POST /api/empresas/validar:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 
 // ---------- Rotas genéricas ----------
 

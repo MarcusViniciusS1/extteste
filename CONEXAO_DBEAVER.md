@@ -27,7 +27,6 @@ Nova Conexão → **PostgreSQL** → preencher:
 | Database | `zorte_tickets` |
 | Username | `postgres` |
 | Password | `admin` |
-
 Testar conexão → Finalizar.
 
 ## Observações
