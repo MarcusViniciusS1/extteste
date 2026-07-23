@@ -86,6 +86,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (request.action === "getTags") {
+    apiGet('/tags?order_by=name&order_dir=asc').then(sendResponse);
+    return true;
+  }
+
+  if (request.action === "createTag") {
+    apiPost('/tags', request.tag).then(sendResponse);
+    return true;
+  }
+
   if (request.action === "createLog") {
     apiPost('/system_logs', request.log).then(sendResponse);
     return true;

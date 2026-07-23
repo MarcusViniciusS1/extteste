@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Search, X, Building2, Link as LinkIcon, ArrowLeft, User, Phone } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { Attendant, Company, TicketSystem } from '../lib/types';
+import { Attendant, Company, Ticket, TicketStatus, TicketSystem, TicketPriority, PRIORITY_LABELS } from '../lib/types';
+import { SLA_HOURS, suggestDueDate } from '../lib/sla';
+import TagPicker from '../components/TagPicker';
+import { maskPhone } from '../lib/masks';
+import { getCurrentAttendantId } from '../lib/currentAttendant';
 
 export default function Registro() {
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -14,12 +18,18 @@ export default function Registro() {
   const [urlAtendimento, setUrlAtendimento] = useState('');
   const [nomeContato, setNomeContato] = useState('');
   const [telefoneContato, setTelefoneContato] = useState('');
-  
-  const [status, setStatus] = useState('novo');
+
+  const [status, setStatus] = useState<TicketStatus>('novo');
   const [sistema, setSistema] = useState<TicketSystem>('Z');
+  const [priority, setPriority] = useState<TicketPriority>('media');
   const [companyId, setCompanyId] = useState('');
   const [attendantId, setAttendantId] = useState('');
-  const [tags, setTags] = useState('');
+  const [tags, setTags] = useState<string[]>([]);
+  const [linearInput, setLinearInput] = useState('');
+
+  // Prazo do SLA: sempre calculado (criação + horas da prioridade), nunca
+  // digitado manualmente.
+  const dueDatePreview = useMemo(() => suggestDueDate(priority), [priority]);
 
   const [companyQuery, setCompanyQuery] = useState('');
   const [companyOpen, setCompanyOpen] = useState(false);
@@ -76,13 +86,25 @@ export default function Registro() {
     setCompanyOpen(false);
   }
 
+  // Aceita colar o ID da issue (ex.: "ZOR-123") ou a URL completa do Linear;
+  // extrai o identificador de qualquer um dos dois formatos.
+  function parseLinearInput(raw: string): { id: string | null; url: string | null } {
+    const v = raw.trim();
+    if (!v) return { id: null, url: null };
+    const m = v.match(/([A-Z]{2,10}-\d+)/i);
+    const id = m ? m[1].toUpperCase() : v;
+    const url = /^https?:\/\//i.test(v) ? v : null;
+    return { id, url };
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!subject.trim()) return;
     setSaving(true);
     setError('');
-    
-    const ticketData: any = {
+
+    const linear = parseLinearInput(linearInput);
+    const ticketData: Partial<Ticket> = {
       subject: subject.trim(),
       description: description.trim() || null,
       url_atendimento: urlAtendimento.trim() || null,
@@ -90,9 +112,13 @@ export default function Registro() {
       telefone_contato: telefoneContato.trim() || null,
       status,
       sistema,
+      priority,
+      due_date: suggestDueDate(priority),
+      linear_issue_id: linear.id,
+      linear_issue_url: linear.url,
       company_id: companyId || null,
       attendant_id: attendantId || null,
-      tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
+      tags,
     };
 
     const { data, error } = await supabase
@@ -108,6 +134,7 @@ export default function Registro() {
     }
     
     await supabase.from('system_logs').insert({
+      attendant_id: getCurrentAttendantId() || null,
       action: 'create',
       entity: 'ticket',
       entity_id: data.id,
@@ -123,14 +150,14 @@ export default function Registro() {
       <div className="flex items-center gap-4">
         <button 
           onClick={() => window.location.href = '/tickets'} 
-          className="p-2 text-[#8a99b8] hover:text-white hover:bg-white/5 rounded-full transition-colors"
+          className="p-2 text-[#a1a1aa] hover:text-white hover:bg-white/5 rounded-full transition-colors"
           title="Voltar"
         >
           <ArrowLeft className="h-5 w-5" />
         </button>
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Registrar Novo Atendimento</h1>
-          <p className="text-sm text-[#8a99b8]">Preencha as informações do cliente capturadas do Crisp.</p>
+          <p className="text-sm text-[#a1a1aa]">Preencha as informações do cliente capturadas do Crisp.</p>
         </div>
       </div>
 
@@ -149,7 +176,7 @@ export default function Registro() {
             <div>
               <label className="label">Nome do Contato</label>
               <div className="relative">
-                <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#5a6a8a]" />
+                <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71717a]" />
                 <input 
                   className="input pl-9" 
                   value={nomeContato} 
@@ -162,12 +189,12 @@ export default function Registro() {
             <div>
               <label className="label">Telefone / WhatsApp</label>
               <div className="relative">
-                <Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#5a6a8a]" />
-                <input 
-                  className="input pl-9" 
-                  value={telefoneContato} 
-                  onChange={(e) => setTelefoneContato(e.target.value)} 
-                  placeholder="Número de WhatsApp do cliente" 
+                <Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71717a]" />
+                <input
+                  className="input pl-9"
+                  value={telefoneContato}
+                  onChange={(e) => setTelefoneContato(maskPhone(e.target.value))}
+                  placeholder="Número de WhatsApp do cliente"
                 />
               </div>
             </div>
@@ -176,7 +203,7 @@ export default function Registro() {
             <div className="sm:col-span-2">
               <label className="label">URL do Atendimento (Opcional)</label>
               <div className="relative">
-                <LinkIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#5a6a8a]" />
+                <LinkIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71717a]" />
                 <input 
                   className="input pl-9" 
                   value={urlAtendimento} 
@@ -195,7 +222,7 @@ export default function Registro() {
             {/* Linha 5: Status e Sistema */}
             <div>
               <label className="label">Status</label>
-              <select className="input" value={status} onChange={(e) => setStatus(e.target.value)}>
+              <select className="input" value={status} onChange={(e) => setStatus(e.target.value as TicketStatus)}>
                 <option value="novo">Novo</option>
                 <option value="em_andamento">Em Andamento</option>
                 <option value="aguardando">Aguardando</option>
@@ -211,26 +238,41 @@ export default function Registro() {
               </select>
             </div>
 
+            {/* Linha 5.5: Prioridade (SLA) e Prazo */}
+            <div>
+              <label className="label">Prioridade (SLA)</label>
+              <select className="input" value={priority} onChange={(e) => setPriority(e.target.value as TicketPriority)}>
+                {Object.entries(PRIORITY_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label">Prazo (SLA)</label>
+              <div className="input flex items-center justify-between text-[#A1A1AA]">
+                <span>{new Date(dueDatePreview).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                <span className="text-xs">{SLA_HOURS[priority]}h</span>
+              </div>
+            </div>
+
             {/* Linha 6: Empresa e Atendente */}
             <div className="relative">
               <label className="label">Empresa</label>
               {selectedCompany ? (
                 <div className="input flex items-center justify-between gap-2">
                   <span className="flex min-w-0 items-center gap-2">
-                    <Building2 className="h-4 w-4 flex-shrink-0 text-[#5a6a8a]" />
+                    <Building2 className="h-4 w-4 flex-shrink-0 text-[#71717a]" />
                     <span className="truncate">
                       {selectedCompany.name}
-                      {selectedCompany.tenant?.name ? <span className="text-[#8a99b8]"> · {selectedCompany.tenant.name}</span> : ''}
+                      {selectedCompany.tenant?.name ? <span className="text-[#a1a1aa]"> · {selectedCompany.tenant.name}</span> : ''}
                     </span>
                   </span>
-                  <button type="button" onClick={() => selectCompany(null)} className="flex-shrink-0 text-[#8a99b8] hover:text-[#e6edf7]">
+                  <button type="button" onClick={() => selectCompany(null)} className="flex-shrink-0 text-[#a1a1aa] hover:text-[#ffffff]">
                     <X className="h-4 w-4" />
                   </button>
                 </div>
               ) : (
                 <div className="relative">
                   <div className="relative">
-                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#5a6a8a]" />
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71717a]" />
                     <input
                       className="input pl-9"
                       placeholder="Buscar por nome, CNPJ ou tenant..."
@@ -241,9 +283,9 @@ export default function Registro() {
                     />
                   </div>
                   {companyOpen && (
-                    <div className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-lg border border-[#1f2d4d] bg-[#0b1220] shadow-lg">
+                    <div className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-lg border border-[#3f3f46] bg-[#18181b] shadow-lg">
                       {filteredCompanies.length === 0 ? (
-                        <p className="px-3 py-3 text-sm text-[#8a99b8]">Nenhuma empresa encontrada.</p>
+                        <p className="px-3 py-3 text-sm text-[#a1a1aa]">Nenhuma empresa encontrada.</p>
                       ) : (
                         filteredCompanies.map((c) => (
                           <button
@@ -252,8 +294,8 @@ export default function Registro() {
                             onMouseDown={(e) => { e.preventDefault(); selectCompany(c); }}
                             className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left hover:bg-white/5"
                           >
-                            <span className="text-sm text-[#e6edf7]">{c.name}</span>
-                            <span className="text-xs text-[#8a99b8]">
+                            <span className="text-sm text-[#ffffff]">{c.name}</span>
+                            <span className="text-xs text-[#a1a1aa]">
                               {c.document ? `CNPJ ${c.document}` : 'Sem CNPJ'}
                               {c.tenant?.name ? ` · ${c.tenant.name}` : ''}
                             </span>
@@ -275,16 +317,27 @@ export default function Registro() {
             </div>
 
             {/* Linha 7: Tags */}
-            <div>
-              <label className="label">Tags (separadas por vírgula)</label>
-              <input className="input" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="urgente, cliente_vip" />
+            <div className="sm:col-span-2">
+              <label className="label">Tags</label>
+              <TagPicker value={tags} onChange={setTags} />
+            </div>
+
+            {/* Linha 8: Issue no Linear (necessário em casos de Bug/Sugestão) */}
+            <div className="sm:col-span-2">
+              <label className="label">Issue vinculada no Linear (opcional)</label>
+              <input
+                className="input"
+                value={linearInput}
+                onChange={(e) => setLinearInput(e.target.value)}
+                placeholder="Cole o ID (ex.: ZOR-123) ou a URL da issue — necessário em casos de bug/sugestão"
+              />
             </div>
 
           </div>
 
           {error && <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-md text-sm text-red-400">{error}</div>}
 
-          <div className="flex justify-end gap-3 pt-6 border-t border-[#1f2d4d]">
+          <div className="flex justify-end gap-3 pt-6 border-t border-[#3f3f46]">
             <button type="button" onClick={() => window.location.href = '/tickets'} className="btn-ghost px-6 py-2">
               Cancelar
             </button>

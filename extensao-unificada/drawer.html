@@ -52,6 +52,13 @@
       background: var(--card); border: 1px solid var(--border); border-radius: 9px; padding: 8px 11px;
     }
     .chip .x { background: transparent; border: 0; color: var(--muted); cursor: pointer; font-size: 15px; }
+    .tag-chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: rgba(47,127,240,.15); color: #7fb2f7; border-radius: 7px;
+      padding: 4px 9px; font-size: 12px;
+    }
+    .tag-chip .x { background: transparent; border: 0; color: inherit; cursor: pointer; font-size: 13px; line-height: 1; padding: 0; }
+    .combo-item.create { color: #7fb2f7; border-top: 1px solid var(--border); }
     .btn-validate {
       margin-top: 6px; width: 100%; background: rgba(47,127,240,.12); color: #7fb2f7;
       border: 1px solid rgba(47,127,240,.3); border-radius: 9px; padding: 8px 11px;
@@ -161,9 +168,33 @@
         <select id="attendant"><option value="">— Não atribuído —</option></select>
       </div>
       <div class="field">
-        <label for="tags">Tags (vírgula)</label>
-        <input id="tags" placeholder="urgente, vip" />
+        <label for="priority">Prioridade (SLA)</label>
+        <select id="priority">
+          <option value="baixa">Baixa</option>
+          <option value="media" selected>Média</option>
+          <option value="alta">Alta</option>
+          <option value="urgente">Urgente</option>
+        </select>
       </div>
+    </div>
+
+    <div class="field">
+      <label for="dueDate">Prazo</label>
+      <input id="dueDate" type="datetime-local" />
+    </div>
+
+    <div class="field">
+      <label for="tagInput">Tags</label>
+      <div class="combo">
+        <div id="tagChips" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px;"></div>
+        <input id="tagInput" placeholder="Adicionar tag..." autocomplete="off" />
+        <div id="tagList" class="combo-list" style="display:none"></div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="linear">Issue vinculada no Linear (opcional)</label>
+      <input id="linear" placeholder="ZOR-123 ou URL do Linear" />
     </div>
 
     <div id="error" class="error" style="display:none"></div>

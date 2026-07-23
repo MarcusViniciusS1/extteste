@@ -3,6 +3,10 @@ import { Search, Plus, Upload, Trash2, Pencil, Building2, Download } from 'lucid
 import { supabase } from '../lib/supabase';
 import { Contact, Company } from '../lib/types';
 import Modal from '../components/Modal';
+import { maskPhone } from '../lib/masks';
+import { getCurrentAttendantId } from '../lib/currentAttendant';
+import { confirmDialog } from '../lib/confirm';
+import { toast } from '../lib/toast';
 
 export default function Contacts() {
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -53,7 +57,7 @@ export default function Contacts() {
 
   function openEdit(c: Contact) {
     setEditing(c);
-    setName(c.name); setEmail(c.email ?? ''); setPhone(c.phone ?? ''); setPosition(c.position ?? ''); setCompanyId(c.company_id ?? ''); setNotes(c.notes ?? '');
+    setName(c.name); setEmail(c.email ?? ''); setPhone(maskPhone(c.phone ?? '')); setPosition(c.position ?? ''); setCompanyId(c.company_id ?? ''); setNotes(c.notes ?? '');
     setShowForm(true);
   }
 
@@ -65,22 +69,24 @@ export default function Contacts() {
         name: name.trim(), email: email.trim() || null, phone: phone.trim() || null,
         position: position.trim() || null, company_id: companyId || null, notes: notes.trim() || null,
       }).eq('id', editing.id);
-      await supabase.from('system_logs').insert({ action: 'update', entity: 'contact', entity_id: editing.id, details: { name: name.trim() } });
+      await supabase.from('system_logs').insert({ attendant_id: getCurrentAttendantId() || null, action: 'update', entity: 'contact', entity_id: editing.id, details: { name: name.trim() } });
     } else {
       const { data } = await supabase.from('contacts').insert({
         name: name.trim(), email: email.trim() || null, phone: phone.trim() || null,
         position: position.trim() || null, company_id: companyId || null, notes: notes.trim() || null,
       }).select('id').single();
-      if (data) await supabase.from('system_logs').insert({ action: 'create', entity: 'contact', entity_id: data.id, details: { name: name.trim() } });
+      if (data) await supabase.from('system_logs').insert({ attendant_id: getCurrentAttendantId() || null, action: 'create', entity: 'contact', entity_id: data.id, details: { name: name.trim() } });
     }
+    toast.success(editing ? 'Contato atualizado.' : 'Contato criado.');
     setShowForm(false);
     await load();
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Excluir este contato?')) return;
+    if (!(await confirmDialog('Excluir este contato?'))) return;
     await supabase.from('contacts').delete().eq('id', id);
-    await supabase.from('system_logs').insert({ action: 'delete', entity: 'contact', entity_id: id });
+    await supabase.from('system_logs').insert({ attendant_id: getCurrentAttendantId() || null, action: 'delete', entity: 'contact', entity_id: id });
+    toast.success('Contato excluído.');
     await load();
   }
 
@@ -91,7 +97,7 @@ export default function Contacts() {
     reader.onload = async (ev) => {
       const text = ev.target?.result as string;
       const lines = text.split(/\r?\n/).filter(Boolean);
-      if (lines.length < 2) { alert('Arquivo CSV vazio ou sem dados.'); return; }
+      if (lines.length < 2) { toast.error('Arquivo CSV vazio ou sem dados.'); return; }
       // detect delimiter
       const delim = lines[0].includes(';') ? ';' : ',';
       const headers = lines[0].split(delim).map((h) => h.trim().toLowerCase());
@@ -101,7 +107,7 @@ export default function Contacts() {
       const posIdx = headers.findIndex((h) => h === 'cargo' || h === 'position');
       const compIdx = headers.findIndex((h) => h === 'empresa' || h === 'company');
 
-      if (nameIdx === -1) { alert('Coluna "nome" não encontrada no CSV.'); return; }
+      if (nameIdx === -1) { toast.error('Coluna "nome" não encontrada no CSV.'); return; }
 
       const rows: Record<string, string>[] = [];
       for (let i = 1; i < lines.length; i++) {
@@ -133,10 +139,10 @@ export default function Contacts() {
         }).select('id').single();
         if (data) {
           imported++;
-          await supabase.from('system_logs').insert({ action: 'import', entity: 'contact', entity_id: data.id, details: { name: row.name } });
+          await supabase.from('system_logs').insert({ attendant_id: getCurrentAttendantId() || null, action: 'import', entity: 'contact', entity_id: data.id, details: { name: row.name } });
         }
       }
-      alert(`${imported} contato(s) importado(s).`);
+      toast.success(`${imported} contato(s) importado(s).`);
       await load();
     };
     reader.readAsText(file);
@@ -157,7 +163,7 @@ export default function Contacts() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Contatos</h1>
-          <p className="text-sm text-[#8a99b8]">{contacts.length} contatos cadastrados</p>
+          <p className="text-sm text-[#a1a1aa]">{contacts.length} contatos cadastrados</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button onClick={downloadTemplate} className="btn-outline">
@@ -176,7 +182,7 @@ export default function Contacts() {
       <div className="card p-4">
         <div className="flex flex-col gap-3 sm:flex-row">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#5a6a8a]" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71717a]" />
             <input className="input pl-9" placeholder="Buscar por nome, e-mail, telefone..." value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
           <select className="input w-auto" value={companyFilter} onChange={(e) => setCompanyFilter(e.target.value)}>
@@ -188,14 +194,14 @@ export default function Contacts() {
 
       <div className="card overflow-hidden">
         {loading ? (
-          <div className="py-16 text-center text-sm text-[#8a99b8]">Carregando...</div>
+          <div className="py-16 text-center text-sm text-[#a1a1aa]">Carregando...</div>
         ) : filtered.length === 0 ? (
-          <div className="py-16 text-center text-sm text-[#8a99b8]">Nenhum contato encontrado.</div>
+          <div className="py-16 text-center text-sm text-[#a1a1aa]">Nenhum contato encontrado.</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-[#1f2d4d] text-left text-xs uppercase tracking-wide text-[#8a99b8]">
+                <tr className="border-b border-[#3f3f46] text-left text-xs uppercase tracking-wide text-[#a1a1aa]">
                   <th className="px-4 py-3 font-medium">Nome</th>
                   <th className="px-4 py-3 font-medium">E-mail</th>
                   <th className="px-4 py-3 font-medium">Telefone</th>
@@ -206,15 +212,15 @@ export default function Contacts() {
               </thead>
               <tbody>
                 {filtered.map((c) => (
-                  <tr key={c.id} className="table-row border-b border-[#1f2d4d]/50">
+                  <tr key={c.id} className="table-row border-b border-[#3f3f46]/50">
                     <td className="px-4 py-3 font-medium">{c.name}</td>
-                    <td className="px-4 py-3 text-[#c0cce6]">{c.email ?? '—'}</td>
-                    <td className="px-4 py-3 text-[#c0cce6]">{c.phone ?? '—'}</td>
-                    <td className="px-4 py-3 text-[#8a99b8]">{c.position ?? '—'}</td>
+                    <td className="px-4 py-3 text-[#d4d4d8]">{c.email ?? '—'}</td>
+                    <td className="px-4 py-3 text-[#d4d4d8]">{c.phone ? maskPhone(c.phone) : '—'}</td>
+                    <td className="px-4 py-3 text-[#a1a1aa]">{c.position ?? '—'}</td>
                     <td className="px-4 py-3">
                       {c.company ? (
-                        <span className="flex items-center gap-1.5 text-[#c0cce6]">
-                          <Building2 className="h-3.5 w-3.5 text-[#5a6a8a]" />{c.company.name}
+                        <span className="flex items-center gap-1.5 text-[#d4d4d8]">
+                          <Building2 className="h-3.5 w-3.5 text-[#71717a]" />{c.company.name}
                         </span>
                       ) : '—'}
                     </td>
@@ -246,7 +252,7 @@ export default function Contacts() {
               </div>
               <div>
                 <label className="label">Telefone</label>
-                <input className="input" value={phone} onChange={(e) => setPhone(e.target.value)} />
+                <input className="input" value={phone} onChange={(e) => setPhone(maskPhone(e.target.value))} />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -266,7 +272,7 @@ export default function Contacts() {
               <label className="label">Observações</label>
               <textarea className="input min-h-[80px] resize-y" value={notes} onChange={(e) => setNotes(e.target.value)} />
             </div>
-            <div className="flex justify-end gap-2 pt-2 border-t border-[#1f2d4d]">
+            <div className="flex justify-end gap-2 pt-2 border-t border-[#3f3f46]">
               <button type="button" onClick={() => setShowForm(false)} className="btn-ghost">Cancelar</button>
               <button type="submit" className="btn-primary">{editing ? 'Salvar' : 'Criar'}</button>
             </div>

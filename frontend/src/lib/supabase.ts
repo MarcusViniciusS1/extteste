@@ -8,6 +8,7 @@
 
 const API_URL = (import.meta.env.VITE_API_URL as string | undefined) || 'http://localhost:3001';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- shim genérico: cada chamador tipa via generics/casts no ponto de uso.
 type Result<T = any> = { data: T | null; error: { message: string } | null; count?: number };
 
 function parseEmbeds(select: string): string[] {

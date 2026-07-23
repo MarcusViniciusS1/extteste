@@ -5,10 +5,11 @@
 
 import express from 'express';
 import cors from 'cors';
+import crypto from 'crypto';
 import { pool, ping } from './db.js';
 import { RESOURCES } from './resources.js';
 import { analyzeTicket, claudeConfigured } from './claude.js';
-import { updateConversation, crispConfigured } from './crisp.js';
+import { updateConversation, upsertPeopleProfile, crispConfigured } from './crisp.js';
 
 // Rede de segurança: um erro não tratado em qualquer lugar não deve derrubar o
 // backend (e junto com ele o acesso ao banco). Apenas logamos e seguimos.
@@ -28,7 +29,11 @@ app.use((req, res, next) => {
   next();
 });
 app.use(cors());
-app.use(express.json());
+// Guarda o corpo cru da requisição (req.rawBody) além do já parseado (req.body):
+// necessário para validar a assinatura HMAC do webhook do Linear.
+app.use(express.json({
+  verify: (req, _res, buf) => { req.rawBody = buf; },
+}));
 
 function getResource(key) {
   const res = RESOURCES[key];
@@ -301,6 +306,66 @@ app.post('/api/crisp/enrich', async (req, res) => {
 });
 
 
+// Salva o contato no banco local (tabela contatos), deduplicando por telefone.
+async function saveLocalContact({ name, phone }) {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (digits) {
+    const { rows: ex } = await pool.query(
+      `SELECT id, nome AS name, telefone AS phone
+         FROM contatos
+        WHERE regexp_replace(coalesce(telefone, ''), '[^0-9]', '', 'g') = $1
+        LIMIT 1`,
+      [digits]
+    );
+    if (ex.length) return { row: ex[0], existed: true };
+  }
+  const { rows } = await pool.query(
+    `INSERT INTO contatos (nome, telefone) VALUES ($1, $2)
+     RETURNING id, nome AS name, telefone AS phone`,
+    [name || null, phone || null]
+  );
+  return { row: rows[0], existed: false };
+}
+
+// Adiciona o contato da conversa na aba Contatos do Crisp (People) e no banco
+// local. Sucesso parcial é reportado: se o Crisp falhar, o save local ainda
+// acontece (e vice-versa), com o erro devolvido em crispError/localError.
+app.post('/api/crisp/contact', async (req, res) => {
+  try {
+    const { website_id, name, phone, email } = req.body || {};
+    if (!name && !phone) {
+      throw Object.assign(new Error('Informe ao menos nome ou telefone'), { status: 400 });
+    }
+
+    // 1) Aba Contatos do Crisp (People)
+    let crisp = null;
+    let crispError = null;
+    if (website_id) {
+      try {
+        crisp = await upsertPeopleProfile(website_id, { name, phone, email });
+      } catch (e) {
+        crispError = e.message;
+      }
+    } else {
+      crispError = 'website_id ausente na URL do Crisp';
+    }
+
+    // 2) Banco local (contatos)
+    let contact = null;
+    let localError = null;
+    try {
+      const r = await saveLocalContact({ name, phone });
+      contact = { ...r.row, existed: r.existed };
+    } catch (e) {
+      localError = e.message;
+    }
+
+    res.json({ ok: true, crisp, crispError, contact, localError });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
 // ---------- NOVA ROTA DA EXTENSÃO ----------
 // 1. Rota GET: Mantida apenas para testar se a conexão da extensão está viva
 app.get('/api/empresas', async (req, res) => {
@@ -391,6 +456,69 @@ app.post('/api/empresas/validar', async (req, res) => {
   }
 });
 
+
+// ---------- Integração com o Linear (linear.app) ----------
+// Quando uma issue vinculada a um ticket (ticket.linear_issue_id, colado
+// manualmente pelo atendente na tela do ticket) muda de status no Linear, o
+// Linear chama este webhook. Localizamos o ticket pelo identificador da issue
+// e criamos uma notificação para o atendente responsável — ele vê no sino de
+// notificações do sistema e avisa o cliente específico.
+//
+// ATENÇÃO — integração ainda não é ponta-a-ponta: o Linear exige uma URL
+// pública HTTPS para configurar o webhook, e este backend roda em
+// localhost:3001 por padrão. A rota já fica pronta para ligar assim que
+// houver uma URL pública (deploy ou túnel) e o Signing Secret do Linear.
+
+const LINEAR_WEBHOOK_SECRET = process.env.LINEAR_WEBHOOK_SECRET || '';
+
+function linearSignatureValida(req) {
+  if (!LINEAR_WEBHOOK_SECRET) return true; // sem secret configurado: aceita (modo dev/teste)
+  const recebida = req.header('Linear-Signature') || req.header('linear-signature');
+  if (!recebida || !req.rawBody) return false;
+  const calc = crypto.createHmac('sha256', LINEAR_WEBHOOK_SECRET).update(req.rawBody).digest('hex');
+  return recebida === calc;
+}
+
+app.post('/api/linear/webhook', async (req, res) => {
+  try {
+    if (!linearSignatureValida(req)) {
+      console.warn('⚠️ [linear/webhook] assinatura inválida — pedido recusado.');
+      return res.status(401).json({ ok: false, error: 'assinatura inválida' });
+    }
+
+    const data = (req.body && req.body.data) || {};
+    const issueIdentifier = data.identifier || data.id;
+    const stateName = data.state && data.state.name;
+
+    if (!issueIdentifier) {
+      return res.status(200).json({ ok: false, reason: 'sem identificador de issue no payload' });
+    }
+
+    const { rows } = await pool.query(
+      `SELECT id, numero_ticket, atendente_id FROM tickets WHERE linear_issue_id = $1 LIMIT 1`,
+      [issueIdentifier]
+    );
+    const ticket = rows[0];
+    if (!ticket) {
+      return res.status(200).json({ ok: false, reason: `nenhum ticket vinculado à issue ${issueIdentifier}` });
+    }
+    if (!ticket.atendente_id) {
+      return res.status(200).json({ ok: false, reason: 'ticket sem atendente responsável para notificar' });
+    }
+
+    const mensagem = `Sugestão do ticket #${ticket.numero_ticket ?? ticket.id} teve retorno no Linear (${issueIdentifier})${stateName ? `: ${stateName}` : ''}.`;
+    await pool.query(
+      `INSERT INTO notificacoes (atendente_id, ticket_id, mensagem) VALUES ($1, $2, $3)`,
+      [ticket.atendente_id, ticket.id, mensagem]
+    );
+
+    res.status(200).json({ ok: true });
+  } catch (err) {
+    console.error('❌ [linear/webhook] erro:', err);
+    // Responde 200 mesmo em erro para o Linear não ficar re-tentando indefinidamente.
+    res.status(200).json({ ok: false, error: err.message });
+  }
+});
 
 // ---------- Rotas genéricas ----------
 

@@ -30,6 +30,10 @@ window.__ztTenantShutdown = function () {
   if (oldBtn) oldBtn.remove();
   const oldDrawer = document.getElementById('zt-drawer-wrap');
   if (oldDrawer) oldDrawer.remove();
+  // cnpjScannerInstance é declarado mais abaixo neste mesmo script; esta
+  // função só é CHAMADA por uma futura reinjeção (depois que o script todo já
+  // rodou), então a referência já está inicializada nesse momento.
+  try { if (typeof cnpjScannerInstance !== 'undefined' && cnpjScannerInstance) cnpjScannerInstance.stop(); } catch (e) {}
 };
 
 // Detecta o canal/origem da conversa aberta (chat, whatsapp, email, telefone)
@@ -244,6 +248,44 @@ window.addEventListener('message', (e) => {
   if (d.type === 'close' || d.type === 'created') closeInPageDrawer();
 });
 
+// ---- CNPJ automático: pesquisa + aviso ao drawer (se estiver aberto). ----
+// Duas buscas convivem, uma não substitui a outra:
+//   1) extractProfile() (acima) — já lia segmento/tag/nome-do-perfil atrás de
+//      "cnpj"/"empresa"/"tenant" (usado por validateCurrent/extractTenant).
+//   2) cnpj-scanner.js (abaixo) — varre o TEXTO da conversa por regex, achando
+//      um CNPJ cru de 14 dígitos ou já mascarado (18 caracteres com pontuação),
+//      e dispara só quando aparece um CNPJ NOVO (Set de "já vistos").
+// Quando o scanner encontra um CNPJ novo, CONSULTA se está cadastrado no banco
+// (mesma rota que o resto da extensão usa), loga o resultado no console e — se
+// achou — avisa o drawer (chrome.runtime.sendMessage chega tanto no painel
+// lateral nativo quanto no iframe injetado, os dois são páginas da extensão).
+// Nenhuma escrita no DOM/perfil do Crisp acontece aqui.
+async function handleNewCnpj(cnpjFormatted) {
+  chrome.runtime.sendMessage({ action: 'searchDatabase', query: [cnpjFormatted] }, (r) => {
+    if (chrome.runtime.lastError) return;
+    if (r && r.success) {
+      console.info(`[Zorte Crisp] CNPJ ${cnpjFormatted} detectado na conversa — CADASTRADO (${r.data && (r.data.name || r.data.nome)}).`);
+      // Fire-and-forget: sem drawer aberto, não há listener — lastError é só
+      // descartado pra não gerar warning no console.
+      chrome.runtime.sendMessage({ action: 'cnpjMatchFound', company: r.data }, () => { void chrome.runtime.lastError; });
+    } else {
+      console.info(`[Zorte Crisp] CNPJ ${cnpjFormatted} detectado na conversa — não cadastrado no banco.`);
+    }
+  });
+}
+
+let cnpjScannerInstance = null;
+function startCnpjScanner() {
+  if (typeof window.CnpjScanner === 'undefined') return; // cnpj-scanner.js não carregou
+  if (cnpjScannerInstance) return;
+  cnpjScannerInstance = window.CnpjScanner.createCnpjScanner({
+    root: () => document.querySelector('.c-conversation-box-content') || document.body,
+    onNew: (novos) => { for (const c of novos) handleNewCnpj(c); },
+  });
+  cnpjScannerInstance.start();
+}
+
 // O Crisp é uma SPA e recria o DOM; reinsere o botão periodicamente se sumir.
 mountLauncher();
+startCnpjScanner();
 __ztInterval = setInterval(mountLauncher, 1500);

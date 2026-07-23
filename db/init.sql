@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS companies (
   phone text,
   notes text,
   tenant_id uuid REFERENCES tenants(id) ON DELETE SET NULL,
+  tags text[] DEFAULT '{}',
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
@@ -72,6 +73,8 @@ CREATE TABLE IF NOT EXISTS tickets (
   attendant_id uuid REFERENCES attendants(id) ON DELETE SET NULL,
   due_date timestamptz,
   tags text[] DEFAULT '{}',
+  linear_issue_id text,
+  linear_issue_url text,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now(),
   closed_at timestamptz
@@ -82,6 +85,20 @@ CREATE INDEX IF NOT EXISTS idx_tickets_company ON tickets (company_id);
 CREATE INDEX IF NOT EXISTS idx_tickets_contact ON tickets (contact_id);
 CREATE INDEX IF NOT EXISTS idx_tickets_attendant ON tickets (attendant_id);
 CREATE INDEX IF NOT EXISTS idx_tickets_created ON tickets (created_at);
+CREATE INDEX IF NOT EXISTS idx_tickets_linear_issue ON tickets (linear_issue_id);
+
+-- Notificações internas (ex.: aviso ao atendente quando a issue vinculada no
+-- Linear recebe retorno). Ver POST /api/linear/webhook no backend.
+CREATE TABLE IF NOT EXISTS notifications (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  attendant_id uuid REFERENCES attendants(id) ON DELETE CASCADE,
+  ticket_id uuid REFERENCES tickets(id) ON DELETE CASCADE,
+  message text NOT NULL,
+  read boolean DEFAULT false,
+  created_at timestamptz DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_attendant ON notifications (attendant_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications (read);
 
 -- Notas dos tickets
 CREATE TABLE IF NOT EXISTS ticket_notes (
@@ -100,11 +117,34 @@ CREATE TABLE IF NOT EXISTS system_logs (
   action text NOT NULL,
   entity text,
   entity_id uuid,
+  attendant_id uuid REFERENCES attendants(id) ON DELETE SET NULL,
   details jsonb,
   created_at timestamptz DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_system_logs_entity ON system_logs (entity);
 CREATE INDEX IF NOT EXISTS idx_system_logs_created ON system_logs (created_at);
+CREATE INDEX IF NOT EXISTS idx_system_logs_attendant ON system_logs (attendant_id);
+
+-- Catálogo de tags reutilizáveis (tickets.tags continua um text[] com os
+-- nomes; esta tabela é só o catálogo pra reuso/autocomplete).
+CREATE TABLE IF NOT EXISTS tags (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL UNIQUE,
+  color text NOT NULL DEFAULT '#2f7ff0',
+  description text,
+  is_preset boolean NOT NULL DEFAULT false,
+  created_at timestamptz DEFAULT now()
+);
+INSERT INTO tags (name, color, is_preset) VALUES
+  ('Suporte', '#2f7ff0', true),
+  ('Financeiro', '#16b89a', true),
+  ('Cliente VIP', '#f59e0b', true),
+  ('Dúvida', '#5b9cf5', true),
+  ('Bug', '#ef4444', true),
+  ('Sugestão', '#a855f7', true),
+  ('Cancelamento', '#5a6a8a', true),
+  ('Cliente Novo', '#22c55e', true)
+ON CONFLICT (name) DO NOTHING;
 
 -- Conexões de API
 CREATE TABLE IF NOT EXISTS api_connections (

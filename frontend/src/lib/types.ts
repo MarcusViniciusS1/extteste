@@ -1,6 +1,6 @@
-export type TicketStatus = 'novo' | 'em_andamento' | 'aguardando' | 'resolvido' | 'fechado';
+export type TicketStatus = 'novo' | 'assumido' | 'em_andamento' | 'aguardando' | 'resolvido' | 'fechado';
 export type TicketPriority = 'baixa' | 'media' | 'alta' | 'urgente';
-export type TicketChannel = 'telefone' | 'email' | 'chat' | 'presencial' | 'api';
+export type TicketChannel = 'telefone' | 'email' | 'chat' | 'whatsapp' | 'presencial' | 'api';
 
 export type TicketSystem = 'Z' | 'L';
 
@@ -8,6 +8,17 @@ export interface Tenant {
   id: string;
   name: string;
   slug?: string | null;
+}
+
+// Catálogo de tags reutilizáveis (independente do array tickets.tags, que
+// guarda só os NOMES das tags aplicadas em cada ticket).
+export interface Tag {
+  id: string;
+  name: string;
+  color: string;
+  description?: string | null;
+  is_preset?: boolean;
+  created_at?: string;
 }
 
 export interface Company {
@@ -19,6 +30,7 @@ export interface Company {
   notes?: string | null;
   tenant_id?: string | null;
   tenant?: Tenant | null;
+  tags?: string[] | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -53,6 +65,9 @@ export interface Ticket {
   ticket_number?: number;
   subject: string;
   description?: string | null;
+  url_atendimento?: string | null;
+  nome_contato?: string | null;
+  telefone_contato?: string | null;
   status: TicketStatus;
   priority: TicketPriority;
   channel: TicketChannel;
@@ -62,6 +77,8 @@ export interface Ticket {
   due_date?: string | null;
   sistema?: TicketSystem | null;
   tags?: string[] | null;
+  linear_issue_id?: string | null;
+  linear_issue_url?: string | null;
   created_at?: string;
   updated_at?: string;
   closed_at?: string | null;
@@ -80,13 +97,27 @@ export interface TicketNote {
   attendant?: Attendant | null;
 }
 
+// Notificação interna para um atendente (ex.: aviso de que a issue do Linear
+// vinculada a um ticket recebeu retorno).
+export interface Notification {
+  id: string;
+  attendant_id?: string | null;
+  ticket_id?: string | null;
+  message: string;
+  read?: boolean;
+  created_at?: string;
+  ticket?: Ticket | null;
+}
+
 export interface SystemLog {
   id: string;
   action: string;
   entity?: string | null;
   entity_id?: string | null;
+  attendant_id?: string | null;
   details?: Record<string, unknown> | null;
   created_at?: string;
+  attendant?: Attendant | null;
 }
 
 export interface ApiConnection {
@@ -104,6 +135,7 @@ export interface ApiConnection {
 
 export const STATUS_LABELS: Record<TicketStatus, string> = {
   novo: 'Novo',
+  assumido: 'Assumido',
   em_andamento: 'Em Andamento',
   aguardando: 'Aguardando',
   resolvido: 'Resolvido',
@@ -121,6 +153,7 @@ export const CHANNEL_LABELS: Record<TicketChannel, string> = {
   telefone: 'Telefone',
   email: 'E-mail',
   chat: 'Chat',
+  whatsapp: 'WhatsApp',
   presencial: 'Presencial',
   api: 'API',
 };

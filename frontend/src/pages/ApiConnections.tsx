@@ -3,6 +3,9 @@ import { Plus, Trash2, Pencil, Plug, RefreshCw, CheckCircle2, XCircle, Clock } f
 import { supabase } from '../lib/supabase';
 import { ApiConnection } from '../lib/types';
 import Modal from '../components/Modal';
+import { getCurrentAttendantId } from '../lib/currentAttendant';
+import { confirmDialog } from '../lib/confirm';
+import { toast } from '../lib/toast';
 
 const API_TYPES = [
   { value: 'claude', label: 'Claude (Anthropic)' },
@@ -51,7 +54,7 @@ export default function ApiConnections() {
     if (!name.trim()) return;
     let parsedConfig = {};
     try { parsedConfig = config.trim() ? JSON.parse(config) : {}; }
-    catch { alert('Config JSON inválido.'); return; }
+    catch { toast.error('Config JSON inválido.'); return; }
     if (editing) {
       await supabase.from('api_connections').update({
         name: name.trim(), type, endpoint: endpoint.trim() || null, api_key_ref: apiKeyRef.trim() || null,
@@ -62,16 +65,18 @@ export default function ApiConnections() {
         name: name.trim(), type, endpoint: endpoint.trim() || null, api_key_ref: apiKeyRef.trim() || null,
         status, config: parsedConfig,
       }).select('id').single();
-      if (data) await supabase.from('system_logs').insert({ action: 'create', entity: 'api_connection', entity_id: data.id, details: { name: name.trim(), type } });
+      if (data) await supabase.from('system_logs').insert({ attendant_id: getCurrentAttendantId() || null, action: 'create', entity: 'api_connection', entity_id: data.id, details: { name: name.trim(), type } });
     }
+    toast.success(editing ? 'Conexão atualizada.' : 'Conexão criada.');
     setShowForm(false);
     await load();
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Excluir esta conexão de API?')) return;
+    if (!(await confirmDialog('Excluir esta conexão de API?'))) return;
     await supabase.from('api_connections').delete().eq('id', id);
-    await supabase.from('system_logs').insert({ action: 'delete', entity: 'api_connection', entity_id: id });
+    await supabase.from('system_logs').insert({ attendant_id: getCurrentAttendantId() || null, action: 'delete', entity: 'api_connection', entity_id: id });
+    toast.success('Conexão excluída.');
     await load();
   }
 
@@ -79,12 +84,12 @@ export default function ApiConnections() {
     setTesting(c.id);
     // Simulate a sync/test — update last_sync_at and status
     let newStatus: 'active' | 'error' = 'active';
-    let detail = { tested: true, endpoint: c.endpoint };
+    let detail: Record<string, unknown> = { tested: true, endpoint: c.endpoint };
     if (!c.endpoint) { newStatus = 'error'; detail = { tested: false, error: 'Endpoint não configurado' }; }
     await supabase.from('api_connections').update({
       status: newStatus, last_sync_at: new Date().toISOString(),
     }).eq('id', c.id);
-    await supabase.from('system_logs').insert({ action: 'sync', entity: 'api_connection', entity_id: c.id, details: detail });
+    await supabase.from('system_logs').insert({ attendant_id: getCurrentAttendantId() || null, action: 'sync', entity: 'api_connection', entity_id: c.id, details: detail });
     setTesting(null);
     await load();
   }
@@ -96,29 +101,29 @@ export default function ApiConnections() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Conexões de API</h1>
-          <p className="text-sm text-[#8a99b8]">Integrações com Claude, Lonngren e outros sistemas</p>
+          <p className="text-sm text-[#a1a1aa]">Integrações com Claude, Lonngren e outros sistemas</p>
         </div>
         <button onClick={openNew} className="btn-primary"><Plus className="h-4 w-4" /> Nova Conexão</button>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {loading ? (
-          <div className="col-span-full py-16 text-center text-sm text-[#8a99b8]">Carregando...</div>
+          <div className="col-span-full py-16 text-center text-sm text-[#a1a1aa]">Carregando...</div>
         ) : conns.length === 0 ? (
           <div className="col-span-full py-16 text-center">
             <Plug className="mx-auto mb-3 h-10 w-10 opacity-30" />
-            <p className="text-sm text-[#8a99b8]">Nenhuma conexão de API configurada.</p>
+            <p className="text-sm text-[#a1a1aa]">Nenhuma conexão de API configurada.</p>
           </div>
         ) : conns.map((c) => (
           <div key={c.id} className="card card-hover p-5 group">
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#16b89a]/10">
-                  <Plug className="h-5 w-5 text-[#16b89a]" />
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#dc2626]/10">
+                  <Plug className="h-5 w-5 text-[#dc2626]" />
                 </div>
                 <div>
                   <h3 className="font-semibold">{c.name}</h3>
-                  <p className="text-xs text-[#8a99b8]">{typeLabels[c.type] ?? c.type}</p>
+                  <p className="text-xs text-[#a1a1aa]">{typeLabels[c.type] ?? c.type}</p>
                 </div>
               </div>
               <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
@@ -127,10 +132,10 @@ export default function ApiConnections() {
               </div>
             </div>
             <div className="mt-4 space-y-1.5 text-sm">
-              {c.endpoint && <p className="truncate text-[#c0cce6]">{c.endpoint}</p>}
-              {c.api_key_ref && <p className="text-xs text-[#8a99b8]">Chave: {c.api_key_ref}</p>}
+              {c.endpoint && <p className="truncate text-[#d4d4d8]">{c.endpoint}</p>}
+              {c.api_key_ref && <p className="text-xs text-[#a1a1aa]">Chave: {c.api_key_ref}</p>}
               {c.last_sync_at && (
-                <p className="flex items-center gap-1 text-xs text-[#8a99b8]">
+                <p className="flex items-center gap-1 text-xs text-[#a1a1aa]">
                   <Clock className="h-3 w-3" /> Última sync: {new Date(c.last_sync_at).toLocaleString('pt-BR')}
                 </p>
               )}
@@ -139,7 +144,7 @@ export default function ApiConnections() {
               <span className={`badge ${
                 c.status === 'active' ? 'bg-[#22c55e]/15 text-[#4ade80] border border-[#22c55e]/30' :
                 c.status === 'error' ? 'bg-[#ef4444]/15 text-[#f87171] border border-[#ef4444]/30' :
-                'bg-white/5 text-[#8a99b8] border border-white/10'
+                'bg-white/5 text-[#a1a1aa] border border-white/10'
               }`}>
                 {c.status === 'active' ? <CheckCircle2 className="h-3 w-3" /> : c.status === 'error' ? <XCircle className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
                 {c.status === 'active' ? 'Ativa' : c.status === 'error' ? 'Erro' : 'Inativa'}
@@ -175,7 +180,7 @@ export default function ApiConnections() {
               <div>
                 <label className="label">Referência da Chave (label)</label>
                 <input className="input" value={apiKeyRef} onChange={(e) => setApiKeyRef(e.target.value)} placeholder="ANTHROPIC_API_KEY" />
-                <p className="mt-1 text-[11px] text-[#5a6a8a]">Apenas um rótulo — o valor da chave deve ser configurado como secret no Supabase.</p>
+                <p className="mt-1 text-[11px] text-[#71717a]">Apenas um rótulo — o valor da chave deve ser configurado como secret no Supabase.</p>
               </div>
               <div>
                 <label className="label">Status</label>
@@ -190,7 +195,7 @@ export default function ApiConnections() {
               <label className="label">Configuração (JSON)</label>
               <textarea className="input min-h-[100px] resize-y font-mono text-xs" value={config} onChange={(e) => setConfig(e.target.value)} />
             </div>
-            <div className="flex justify-end gap-2 pt-2 border-t border-[#1f2d4d]">
+            <div className="flex justify-end gap-2 pt-2 border-t border-[#3f3f46]">
               <button type="button" onClick={() => setShowForm(false)} className="btn-ghost">Cancelar</button>
               <button type="submit" className="btn-primary">{editing ? 'Salvar' : 'Criar'}</button>
             </div>

@@ -42,6 +42,41 @@ async function getConversationMeta(websiteId, sessionId) {
   return crispFetch(`/website/${websiteId}/conversation/${sessionId}/meta`);
 }
 
+// Cria (ou reconhece já existente) um perfil na aba Contatos do Crisp (People).
+// Requer que o token do plugin tenha o escopo "People > Write"
+// (website:people:write) e esteja conectado ao website.
+//
+// O Crisp indexa People por E-MAIL. Contatos só-WhatsApp não têm e-mail, então
+// sintetizamos um a partir do telefone (ex.: 5584999999999@whatsapp.contato).
+export async function upsertPeopleProfile(websiteId, { name, phone, email } = {}) {
+  if (!crispConfigured) {
+    throw Object.assign(new Error('Credenciais do Crisp não configuradas no backend/.env'), { status: 503 });
+  }
+
+  const digits = String(phone || '').replace(/\D/g, '');
+  const finalEmail = (email && String(email).trim()) || (digits ? `${digits}@whatsapp.contato` : '');
+  if (!finalEmail) {
+    throw Object.assign(new Error('Contato sem e-mail nem telefone — o Crisp exige um identificador'), { status: 400 });
+  }
+
+  const person = {};
+  if (name) person.nickname = String(name).trim();
+  if (phone) person.phone = String(phone).trim();
+
+  try {
+    const created = await crispFetch(`/website/${websiteId}/people/profile`, {
+      method: 'POST',
+      body: JSON.stringify({ email: finalEmail, person }),
+    });
+    return { created: true, existed: false, email: finalEmail, people_id: created?.people_id || null };
+  } catch (e) {
+    // 409 = perfil com esse e-mail já existe: para o nosso objetivo (garantir
+    // que o contato esteja salvo) isso é sucesso.
+    if (e.status === 409) return { created: false, existed: true, email: finalEmail };
+    throw e;
+  }
+}
+
 // Atualiza a conversa no Crisp, preservando o que já existe:
 //  - dataFields: objeto { chave: valor } gravado em "data" (ex: { CNPJ: '...' }).
 //  - segments: lista de segmentos a garantir na conversa (ex: o tenant).

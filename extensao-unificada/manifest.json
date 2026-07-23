@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Zorte Crisp — Atendimento e Etiquetas",
-  "version": "5.0.5",
+  "version": "5.2.1",
   "description": "Unificação: etiquetas/indicadores na lista do Crisp (status, atribuição, janela 24h, contadores, canal, empresa) + validação de empresa no sistema interno e registro de atendimento pelo painel lateral.",
   "permissions": [
     "storage",
@@ -49,7 +49,7 @@
     },
     {
       "matches": ["https://app.crisp.chat/*"],
-      "js": ["tenant.js"],
+      "js": ["cnpj-scanner.js", "tenant.js"],
       "run_at": "document_idle"
     }
   ]

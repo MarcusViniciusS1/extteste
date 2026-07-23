@@ -63,6 +63,23 @@ function selectCompany(c) {
   $('companyList').style.display = 'none';
 }
 
+// ---- Aviso do scanner de CNPJ (tenant.js) ----
+// O content script varre a conversa e, ao achar um CNPJ novo já cadastrado,
+// avisa o drawer (painel lateral OU iframe — chrome.runtime.onMessage chega
+// nos dois). Só preenche se o usuário ainda não escolheu uma empresa.
+if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
+  chrome.runtime.onMessage.addListener((request) => {
+    if (request && request.action === 'cnpjMatchFound' && request.company && !companyId) {
+      selectCompany(request.company);
+      const msg = $('validateMsg');
+      if (msg) {
+        msg.textContent = 'Empresa identificada automaticamente (CNPJ detectado na conversa).';
+        msg.className = 'validate-msg ok';
+      }
+    }
+  });
+}
+
 function renderCompanyList(results) {
   const box = $('companyList');
   box.innerHTML = '';
@@ -163,6 +180,136 @@ $('validate').addEventListener('click', async () => {
   }
 });
 
+// ---- Prioridade (SLA) + prazo sugerido ----
+// Espelha frontend/src/lib/sla.ts (a extensão não pode importar módulos TS).
+const SLA_HOURS = { urgente: 4, alta: 24, media: 48, baixa: 72 };
+
+function toInputValue(iso) {
+  const d = new Date(iso);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function fromInputValue(v) {
+  if (!v) return null;
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+function suggestDueDate(priority) {
+  const hours = SLA_HOURS[priority] ?? SLA_HOURS.media;
+  return new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
+}
+
+let dueDateTouched = false;
+$('dueDate').value = toInputValue(suggestDueDate($('priority').value));
+$('priority').addEventListener('change', () => {
+  if (!dueDateTouched) $('dueDate').value = toInputValue(suggestDueDate($('priority').value));
+});
+$('dueDate').addEventListener('input', () => { dueDateTouched = true; });
+
+// ---- Issue vinculada no Linear ----
+// Espelha o parser de frontend/src/pages/Registro.tsx.
+function parseLinearInput(raw) {
+  const v = (raw || '').trim();
+  if (!v) return { id: null, url: null };
+  const m = v.match(/([A-Z]{2,10}-\d+)/i);
+  const id = m ? m[1].toUpperCase() : v;
+  const url = /^https?:\/\//i.test(v) ? v : null;
+  return { id, url };
+}
+
+// ---- Tags (catálogo reutilizável, com criação na hora) ----
+let tagCatalog = [];
+let selectedTags = [];
+
+send('getTags', {}).then((r) => {
+  if (r && r.ok) tagCatalog = (r.data && r.data.data) || [];
+});
+
+function renderTagChips() {
+  const box = $('tagChips');
+  box.innerHTML = '';
+  for (const name of selectedTags) {
+    const chip = document.createElement('span');
+    chip.className = 'tag-chip';
+    const nm = document.createElement('span');
+    nm.textContent = name;
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.className = 'x';
+    x.textContent = '×';
+    x.addEventListener('click', () => {
+      selectedTags = selectedTags.filter((t) => t !== name);
+      renderTagChips();
+    });
+    chip.appendChild(nm);
+    chip.appendChild(x);
+    box.appendChild(chip);
+  }
+}
+
+function addTag(name) {
+  const n = (name || '').trim();
+  if (!n) return;
+  if (selectedTags.some((t) => t.toLowerCase() === n.toLowerCase())) return;
+  selectedTags.push(n);
+  renderTagChips();
+  $('tagInput').value = '';
+  $('tagList').style.display = 'none';
+}
+
+async function createAndAddTag(name) {
+  const n = (name || '').trim();
+  if (!n) return;
+  const r = await send('createTag', { tag: { name: n } });
+  if (r && r.ok && r.data && r.data.data) {
+    tagCatalog.push(r.data.data);
+  }
+  addTag(n);
+}
+
+function renderTagSuggestions() {
+  const q = $('tagInput').value.trim().toLowerCase();
+  const selectedLower = new Set(selectedTags.map((t) => t.toLowerCase()));
+  const suggestions = tagCatalog
+    .filter((t) => !selectedLower.has(t.name.toLowerCase()))
+    .filter((t) => !q || t.name.toLowerCase().includes(q));
+  const exactMatch = tagCatalog.some((t) => t.name.toLowerCase() === q);
+  const canCreate = q.length > 0 && !exactMatch && !selectedLower.has(q);
+
+  const box = $('tagList');
+  box.innerHTML = '';
+  for (const t of suggestions) {
+    const item = document.createElement('div');
+    item.className = 'combo-item';
+    item.textContent = t.name;
+    item.addEventListener('mousedown', (e) => { e.preventDefault(); addTag(t.name); });
+    box.appendChild(item);
+  }
+  if (canCreate) {
+    const item = document.createElement('div');
+    item.className = 'combo-item create';
+    item.textContent = `+ Criar tag "${$('tagInput').value.trim()}"`;
+    item.addEventListener('mousedown', (e) => { e.preventDefault(); createAndAddTag($('tagInput').value); });
+    box.appendChild(item);
+  }
+  box.style.display = suggestions.length || canCreate ? 'block' : 'none';
+}
+
+$('tagInput').addEventListener('input', renderTagSuggestions);
+$('tagInput').addEventListener('focus', renderTagSuggestions);
+$('tagInput').addEventListener('blur', () => setTimeout(() => { $('tagList').style.display = 'none'; }, 150));
+$('tagInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    const q = $('tagInput').value.trim().toLowerCase();
+    const selectedLower = new Set(selectedTags.map((t) => t.toLowerCase()));
+    const first = tagCatalog.find((t) => !selectedLower.has(t.name.toLowerCase()) && t.name.toLowerCase().includes(q));
+    if (first) addTag(first.name);
+    else if (q) createAndAddTag($('tagInput').value);
+  }
+});
+
 // ---- Atendentes ----
 send('getAttendants', {}).then((r) => {
   if (!r || !r.ok) return;
@@ -192,6 +339,8 @@ $('form').addEventListener('submit', async (e) => {
   btn.disabled = true;
   btn.textContent = 'Salvando...';
 
+  const linear = parseLinearInput($('linear').value);
+
   const ticket = {
     subject,
     description: $('description').value.trim() || null,
@@ -203,7 +352,11 @@ $('form').addEventListener('submit', async (e) => {
     channel: $('canal').value,
     company_id: companyId || null,
     attendant_id: $('attendant').value || null,
-    tags: $('tags').value.split(',').map((t) => t.trim()).filter(Boolean),
+    priority: $('priority').value,
+    due_date: fromInputValue($('dueDate').value),
+    tags: selectedTags,
+    linear_issue_id: linear.id,
+    linear_issue_url: linear.url,
   };
 
   const r = await send('createTicket', { ticket });

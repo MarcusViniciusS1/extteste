@@ -3,10 +3,20 @@ import { Search, Plus, Trash2, Pencil, Building2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Company, Tenant } from '../lib/types';
 import Modal from '../components/Modal';
+import TagBadge from '../components/TagBadge';
+import { useTagCatalog } from '../lib/useTagCatalog';
+import { maskDocument, maskPhone } from '../lib/masks';
+import { getCurrentAttendantId } from '../lib/currentAttendant';
+import { confirmDialog } from '../lib/confirm';
+import { toast } from '../lib/toast';
+
+const NEW_CLIENT_TAG = 'Cliente Novo';
+const NEW_CLIENT_DAYS = 60;
 
 export default function Companies() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [tenants, setTenants] = useState<Tenant[]>([]);
+  const tagCatalog = useTagCatalog();
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [showForm, setShowForm] = useState(false);
@@ -25,7 +35,21 @@ export default function Companies() {
       supabase.from('companies').select('*, tenant(*)').order('name'),
       supabase.from('tenants').select('*').order('name'),
     ]);
-    setCompanies(companiesData ?? []);
+    const list = companiesData ?? [];
+
+    // Expira o selo "Cliente Novo" depois de NEW_CLIENT_DAYS dias — checagem
+    // preguiçosa (feita ao carregar a lista) em vez de um job agendado.
+    const cutoff = Date.now() - NEW_CLIENT_DAYS * 24 * 60 * 60 * 1000;
+    for (const c of list as Company[]) {
+      const tags: string[] | null | undefined = c.tags;
+      if (tags?.includes(NEW_CLIENT_TAG) && c.created_at && new Date(c.created_at).getTime() < cutoff) {
+        const nextTags = tags.filter((t: string) => t !== NEW_CLIENT_TAG);
+        c.tags = nextTags;
+        void supabase.from('companies').update({ tags: nextTags }).eq('id', c.id);
+      }
+    }
+
+    setCompanies(list);
     setTenants(tenantsData ?? []);
     setLoading(false);
   }
@@ -44,7 +68,7 @@ export default function Companies() {
   }
   function openEdit(c: Company) {
     setEditing(c);
-    setName(c.name); setDocument(c.document ?? ''); setEmail(c.email ?? ''); setPhone(c.phone ?? ''); setTenantName(c.tenant?.name ?? ''); setNotes(c.notes ?? '');
+    setName(c.name); setDocument(maskDocument(c.document ?? '')); setEmail(c.email ?? ''); setPhone(maskPhone(c.phone ?? '')); setTenantName(c.tenant?.name ?? ''); setNotes(c.notes ?? '');
     setShowForm(true);
   }
 
@@ -68,22 +92,25 @@ export default function Companies() {
         name: name.trim(), document: document.trim() || null, email: email.trim() || null,
         phone: phone.trim() || null, tenant_id: tenantId, notes: notes.trim() || null,
       }).eq('id', editing.id);
-      await supabase.from('system_logs').insert({ action: 'update', entity: 'company', entity_id: editing.id, details: { name: name.trim() } });
+      await supabase.from('system_logs').insert({ attendant_id: getCurrentAttendantId() || null, action: 'update', entity: 'company', entity_id: editing.id, details: { name: name.trim() } });
     } else {
       const { data } = await supabase.from('companies').insert({
         name: name.trim(), document: document.trim() || null, email: email.trim() || null,
         phone: phone.trim() || null, tenant_id: tenantId, notes: notes.trim() || null,
+        tags: [NEW_CLIENT_TAG],
       }).select('id').single();
-      if (data) await supabase.from('system_logs').insert({ action: 'create', entity: 'company', entity_id: data.id, details: { name: name.trim() } });
+      if (data) await supabase.from('system_logs').insert({ attendant_id: getCurrentAttendantId() || null, action: 'create', entity: 'company', entity_id: data.id, details: { name: name.trim() } });
     }
+    toast.success(editing ? 'Empresa atualizada.' : 'Empresa criada.');
     setShowForm(false);
     await load();
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Excluir esta empresa? Contatos vinculizados ficarão sem empresa.')) return;
+    if (!(await confirmDialog('Excluir esta empresa? Contatos vinculados ficarão sem empresa.'))) return;
     await supabase.from('companies').delete().eq('id', id);
-    await supabase.from('system_logs').insert({ action: 'delete', entity: 'company', entity_id: id });
+    await supabase.from('system_logs').insert({ attendant_id: getCurrentAttendantId() || null, action: 'delete', entity: 'company', entity_id: id });
+    toast.success('Empresa excluída.');
     await load();
   }
 
@@ -92,36 +119,36 @@ export default function Companies() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Empresas</h1>
-          <p className="text-sm text-[#8a99b8]">{companies.length} empresas cadastradas</p>
+          <p className="text-sm text-[#a1a1aa]">{companies.length} empresas cadastradas</p>
         </div>
         <button onClick={openNew} className="btn-primary"><Plus className="h-4 w-4" /> Nova Empresa</button>
       </div>
 
       <div className="card p-4">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#5a6a8a]" />
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71717a]" />
           <input className="input pl-9" placeholder="Buscar por nome, CNPJ, e-mail..." value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {loading ? (
-          <div className="col-span-full py-16 text-center text-sm text-[#8a99b8]">Carregando...</div>
+          <div className="col-span-full py-16 text-center text-sm text-[#a1a1aa]">Carregando...</div>
         ) : filtered.length === 0 ? (
           <div className="col-span-full py-16 text-center">
             <Building2 className="mx-auto mb-3 h-10 w-10 opacity-30" />
-            <p className="text-sm text-[#8a99b8]">Nenhuma empresa encontrada.</p>
+            <p className="text-sm text-[#a1a1aa]">Nenhuma empresa encontrada.</p>
           </div>
         ) : filtered.map((c) => (
           <div key={c.id} className="card card-hover p-5 group">
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#2f7ff0]/10">
-                  <Building2 className="h-5 w-5 text-[#5b9cf5]" />
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#ef4444]/10">
+                  <Building2 className="h-5 w-5 text-[#f87171]" />
                 </div>
                 <div>
                   <h3 className="font-semibold">{c.name}</h3>
-                  {c.document && <p className="text-xs text-[#8a99b8]">{c.document}</p>}
+                  {c.document && <p className="text-xs text-[#a1a1aa]">{maskDocument(c.document)}</p>}
                 </div>
               </div>
               <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
@@ -129,11 +156,16 @@ export default function Companies() {
                 <button onClick={() => handleDelete(c.id)} className="btn-ghost p-1.5 text-[#f87171] hover:bg-[#ef4444]/10"><Trash2 className="h-4 w-4" /></button>
               </div>
             </div>
-            <div className="mt-4 space-y-1.5 text-sm text-[#c0cce6]">
+            <div className="mt-4 space-y-1.5 text-sm text-[#d4d4d8]">
               {c.email && <p className="truncate">{c.email}</p>}
-              {c.phone && <p>{c.phone}</p>}
-              {c.tenant?.name && <p className="text-[#8a99b8]">{c.tenant.name}</p>}
+              {c.phone && <p>{maskPhone(c.phone)}</p>}
+              {c.tenant?.name && <p className="text-[#a1a1aa]">{c.tenant.name}</p>}
             </div>
+            {c.tags && c.tags.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-1">
+                {c.tags.map((tag) => <TagBadge key={tag} name={tag} catalog={tagCatalog} />)}
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -148,7 +180,7 @@ export default function Companies() {
               </div>
               <div>
                 <label className="label">CNPJ / CPF</label>
-                <input className="input" value={document} onChange={(e) => setDocument(e.target.value)} />
+                <input className="input" value={document} onChange={(e) => setDocument(maskDocument(e.target.value))} />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -158,7 +190,7 @@ export default function Companies() {
               </div>
               <div>
                 <label className="label">Telefone</label>
-                <input className="input" value={phone} onChange={(e) => setPhone(e.target.value)} />
+                <input className="input" value={phone} onChange={(e) => setPhone(maskPhone(e.target.value))} />
               </div>
             </div>
             <div>
@@ -178,7 +210,7 @@ export default function Companies() {
               <label className="label">Observações</label>
               <textarea className="input min-h-[80px] resize-y" value={notes} onChange={(e) => setNotes(e.target.value)} />
             </div>
-            <div className="flex justify-end gap-2 pt-2 border-t border-[#1f2d4d]">
+            <div className="flex justify-end gap-2 pt-2 border-t border-[#3f3f46]">
               <button type="button" onClick={() => setShowForm(false)} className="btn-ghost">Cancelar</button>
               <button type="submit" className="btn-primary">{editing ? 'Salvar' : 'Criar'}</button>
             </div>
