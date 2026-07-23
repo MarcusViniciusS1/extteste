@@ -248,28 +248,31 @@ window.addEventListener('message', (e) => {
   if (d.type === 'close' || d.type === 'created') closeInPageDrawer();
 });
 
-// ---- CNPJ automático: pesquisa + aviso ao drawer (se estiver aberto). ----
+// ---- CNPJ/CPF automático: pesquisa + aviso ao drawer (se estiver aberto). ----
 // Duas buscas convivem, uma não substitui a outra:
 //   1) extractProfile() (acima) — já lia segmento/tag/nome-do-perfil atrás de
 //      "cnpj"/"empresa"/"tenant" (usado por validateCurrent/extractTenant).
 //   2) cnpj-scanner.js (abaixo) — varre o TEXTO da conversa por regex, achando
-//      um CNPJ cru de 14 dígitos ou já mascarado (18 caracteres com pontuação),
-//      e dispara só quando aparece um CNPJ NOVO (Set de "já vistos").
-// Quando o scanner encontra um CNPJ novo, CONSULTA se está cadastrado no banco
-// (mesma rota que o resto da extensão usa), loga o resultado no console e — se
-// achou — avisa o drawer (chrome.runtime.sendMessage chega tanto no painel
-// lateral nativo quanto no iframe injetado, os dois são páginas da extensão).
+//      um CNPJ (14 dígitos) ou CPF (11 dígitos) cru ou já mascarado, e dispara
+//      só quando aparece um documento NOVO (Set de "já vistos"). CPF cru só
+//      conta se passar no dígito verificador (evita confundir com celular).
+// Quando o scanner encontra um documento novo, CONSULTA se está cadastrado no
+// banco (mesma rota que o resto da extensão usa — a busca funciona por dígitos,
+// não importa se é CNPJ ou CPF), loga o resultado no console e — se achou —
+// avisa o drawer (chrome.runtime.sendMessage chega tanto no painel lateral
+// nativo quanto no iframe injetado, os dois são páginas da extensão).
 // Nenhuma escrita no DOM/perfil do Crisp acontece aqui.
-async function handleNewCnpj(cnpjFormatted) {
-  chrome.runtime.sendMessage({ action: 'searchDatabase', query: [cnpjFormatted] }, (r) => {
+async function handleNewDocumento(documento) {
+  const tipo = documento.includes('/') ? 'CNPJ' : 'CPF';
+  chrome.runtime.sendMessage({ action: 'searchDatabase', query: [documento] }, (r) => {
     if (chrome.runtime.lastError) return;
     if (r && r.success) {
-      console.info(`[Zorte Crisp] CNPJ ${cnpjFormatted} detectado na conversa — CADASTRADO (${r.data && (r.data.name || r.data.nome)}).`);
+      console.info(`[Zorte Crisp] ${tipo} ${documento} detectado na conversa — CADASTRADO (${r.data && (r.data.name || r.data.nome)}).`);
       // Fire-and-forget: sem drawer aberto, não há listener — lastError é só
       // descartado pra não gerar warning no console.
       chrome.runtime.sendMessage({ action: 'cnpjMatchFound', company: r.data }, () => { void chrome.runtime.lastError; });
     } else {
-      console.info(`[Zorte Crisp] CNPJ ${cnpjFormatted} detectado na conversa — não cadastrado no banco.`);
+      console.info(`[Zorte Crisp] ${tipo} ${documento} detectado na conversa — não cadastrado no banco.`);
     }
   });
 }
@@ -280,7 +283,7 @@ function startCnpjScanner() {
   if (cnpjScannerInstance) return;
   cnpjScannerInstance = window.CnpjScanner.createCnpjScanner({
     root: () => document.querySelector('.c-conversation-box-content') || document.body,
-    onNew: (novos) => { for (const c of novos) handleNewCnpj(c); },
+    onNew: (novos) => { for (const c of novos) handleNewDocumento(c); },
   });
   cnpjScannerInstance.start();
 }

@@ -1,9 +1,10 @@
 // cnpj-scanner.js — módulo portátil, sem dependências.
 //
 // Duas partes INDEPENDENTES:
-//   1) Extração de CNPJ de um texto (extract / isValid / format / onlyDigits).
+//   1) Extração de CNPJ e CPF de um texto (extract / isValid / isValidCPF /
+//      format / formatCPF / onlyDigits).
 //   2) Scanner de DOM (createCnpjScanner) que observa a tela e dispara quando
-//      aparece um CNPJ NOVO.
+//      aparece um documento NOVO (CNPJ ou CPF).
 //
 // Dá pra levar as duas — ou só a primeira — pra qualquer extensão.
 // Exposto como window.CnpjScanner (e module.exports em ambiente CommonJS).
@@ -18,25 +19,40 @@
 // seu-content.js:
 //   const scanner = CnpjScanner.createCnpjScanner({
 //     root: () => document.querySelector('#chat') || document.body,
-//     onNew: (novos) => alert('CNPJ novo detectado: ' + novos.join(', ')),
+//     onNew: (novos) => alert('Documento novo detectado: ' + novos.join(', ')),
 //   });
 //   scanner.start();
 //
 // Só extração pontual:
-//   CnpjScanner.extract("cliente 11.222.333/0001-81 e 04252011000110");
-//   // => ["11.222.333/0001-81", "04.252.011/0001-10"]
+//   CnpjScanner.extract("cliente 11.222.333/0001-81, CPF 123.456.789-09 e 04252011000110");
+//   // => ["11.222.333/0001-81", "123.456.789-09", "04.252.011/0001-10"]
 //
-// Compatibilidade: o regex RAW usa lookbehind (?<!\d), suportado em
+// CPF em formato CRU (11 dígitos sem pontuação) só é considerado documento se
+// passar na validação do dígito verificador — um número de telefone celular
+// brasileiro também tem 11 dígitos, e sem essa checagem viraria falso positivo
+// toda hora. CNPJ cru (14 dígitos) não tem esse problema: nada mais no domínio
+// da conversa tem 14 dígitos, então o formato sozinho já basta. CPF/CNPJ já
+// pontuados (com os separadores certos) são aceitos só pelo formato, igual
+// sempre foi.
+//
+// Compatibilidade: os regex RAW usam lookbehind (?<!\d), suportado em
 // Chrome/Edge modernos. Para navegadores muito antigos existe uma variante
 // sem lookbehind (peça se precisar).
 
 (function (globalScope) {
   'use strict';
 
-  // mascarado: XX.XXX.XXX/XXXX-XX
+  // CNPJ mascarado: XX.XXX.XXX/XXXX-XX
   const MASKED = /\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}/g;
-  // cru: exatamente 14 dígitos, SEM fazer parte de um número maior
+  // CNPJ cru: exatamente 14 dígitos, SEM fazer parte de um número maior
   const RAW = /(?<!\d)\d{14}(?!\d)/g;
+
+  // CPF mascarado: XXX.XXX.XXX-XX
+  const MASKED_CPF = /\d{3}\.\d{3}\.\d{3}-\d{2}/g;
+  // CPF cru: exatamente 11 dígitos, SEM fazer parte de um número maior
+  // (mesmo formato de um celular brasileiro — por isso passa por isValidCPF
+  // antes de entrar na lista, ver extract()).
+  const RAW_CPF = /(?<!\d)\d{11}(?!\d)/g;
 
   // Só os números de uma string.
   function onlyDigits(s) {
@@ -50,6 +66,27 @@
     return d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
   }
 
+  // Aplica a máscara XXX.XXX.XXX-XX. Devolve null se não houver 11 dígitos.
+  function formatCPF(raw) {
+    const d = onlyDigits(raw);
+    if (d.length !== 11) return null;
+    return d.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
+  }
+
+  // Calcula um dígito verificador padrão (usado por CNPJ e CPF): soma
+  // ponderada dos dígitos de `base` com pesos decrescentes a partir de
+  // base.length + 1, mod 11.
+  function checkDigit(base) {
+    let weight = base.length + 1;
+    let sum = 0;
+    for (let i = 0; i < base.length; i++) {
+      sum += Number(base[i]) * weight--;
+      if (weight < 2) weight = 9; // só entra em jogo pro CNPJ (ciclo 9..2)
+    }
+    const r = sum % 11;
+    return r < 2 ? 0 : 11 - r;
+  }
+
   // Valida os dois dígitos verificadores do CNPJ (opcional — use só pra marcar
   // ✅/⚠️; a detecção em si é por formato).
   function isValid(cnpj) {
@@ -57,30 +94,34 @@
     if (d.length !== 14) return false;
     if (/^(\d)\1{13}$/.test(d)) return false; // rejeita 00000000000000, 11111111111111...
 
-    const dv = (base) => {
-      const len = base.length;
-      let pos = len - 7;
-      let sum = 0;
-      for (let i = 0; i < len; i++) {
-        sum += Number(base[i]) * pos--;
-        if (pos < 2) pos = 9;
-      }
-      const r = sum % 11;
-      return r < 2 ? 0 : 11 - r;
-    };
-
     const base12 = d.slice(0, 12);
-    const dv1 = dv(base12);
-    const dv2 = dv(base12 + dv1);
+    const dv1 = checkDigit(base12);
+    const dv2 = checkDigit(base12 + dv1);
     return d.slice(12) === String(dv1) + String(dv2);
   }
 
-  // Junta os dois regex num Set e devolve a lista única, tudo mascarado
-  // (00000000000000 e 00.000.000/0000-00 viram a mesma string → dedup).
+  // Valida os dois dígitos verificadores do CPF. Ao contrário do CNPJ, esta
+  // checagem É usada na detecção (ver RAW_CPF acima) — é o que separa um CPF
+  // cru de um número de celular de mesmo tamanho.
+  function isValidCPF(cpf) {
+    const d = onlyDigits(cpf);
+    if (d.length !== 11) return false;
+    if (/^(\d)\1{10}$/.test(d)) return false; // rejeita 00000000000, 11111111111...
+
+    const base9 = d.slice(0, 9);
+    const dv1 = checkDigit(base9);
+    const dv2 = checkDigit(base9 + dv1);
+    return d.slice(9) === String(dv1) + String(dv2);
+  }
+
+  // Junta os quatro regex (CNPJ mascarado/cru + CPF mascarado/cru) num Set e
+  // devolve a lista única, tudo já formatado com pontuação. CPF cru só entra
+  // se passar em isValidCPF (ver nota no topo do arquivo sobre celular).
   function extract(text) {
     const t = String(text == null ? '' : text);
     const set = new Set();
     let m;
+
     MASKED.lastIndex = 0;
     while ((m = MASKED.exec(t)) !== null) {
       const f = format(m[0]);
@@ -91,11 +132,24 @@
       const f = format(m[0]);
       if (f) set.add(f);
     }
+
+    MASKED_CPF.lastIndex = 0;
+    while ((m = MASKED_CPF.exec(t)) !== null) {
+      const f = formatCPF(m[0]);
+      if (f) set.add(f);
+    }
+    RAW_CPF.lastIndex = 0;
+    while ((m = RAW_CPF.exec(t)) !== null) {
+      if (!isValidCPF(m[0])) continue;
+      const f = formatCPF(m[0]);
+      if (f) set.add(f);
+    }
+
     return [...set];
   }
 
   // Scanner de DOM: MutationObserver (com debounce) + raiz limitada +
-  // Set de "já vistos". Só dispara onNew quando surge um CNPJ inédito.
+  // Set de "já vistos". Só dispara onNew quando surge um documento inédito.
   function createCnpjScanner(opts) {
     opts = opts || {};
     const getRoot = typeof opts.root === 'function'
@@ -155,7 +209,11 @@
     };
   }
 
-  const api = { MASKED, RAW, onlyDigits, format, isValid, extract, createCnpjScanner };
+  const api = {
+    MASKED, RAW, MASKED_CPF, RAW_CPF,
+    onlyDigits, format, formatCPF, isValid, isValidCPF,
+    extract, createCnpjScanner,
+  };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (globalScope) globalScope.CnpjScanner = api;

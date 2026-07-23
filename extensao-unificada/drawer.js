@@ -73,7 +73,7 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
       selectCompany(request.company);
       const msg = $('validateMsg');
       if (msg) {
-        msg.textContent = 'Empresa identificada automaticamente (CNPJ detectado na conversa).';
+        msg.textContent = 'Empresa identificada automaticamente (CNPJ/CPF detectado na conversa).';
         msg.className = 'validate-msg ok';
       }
     }
